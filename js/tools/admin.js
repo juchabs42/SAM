@@ -266,6 +266,13 @@ export async function mount(root, ctx) {
       throw err;
     }
     if (data?.error) throw new Error(data.error);
+    // Réponse inattendue : la fonction déployée n'est pas celle du dépôt (ex. modèle « Hello world »).
+    const expected = action === 'list' ? Array.isArray(data?.accounts) : data?.ok === true;
+    if (!expected) {
+      const err = new Error('la fonction « sam-admin » déployée dans Supabase ne correspond pas au fichier du dépôt.');
+      err.wrongCode = true;
+      throw err;
+    }
     return data;
   }
 
@@ -285,7 +292,16 @@ export async function mount(root, ctx) {
       $('accList').innerHTML = '';
       $('accSummary').textContent = '';
       $('accSetup').classList.remove('hidden');
-      $('accSetup').innerHTML = error.missing
+      $('accSetup').innerHTML = error.wrongCode
+        ? `<strong>La fonction « sam-admin » ne répond pas comme prévu.</strong>
+           <p>Son code dans Supabase n'est pas celui du site (souvent le modèle « Hello world » resté dans l'éditeur).</p>
+           <ol>
+             <li>Supabase → <em>Edge Functions</em> → <em>sam-admin</em> → onglet <em>Code</em>.</li>
+             <li>Remplacez tout le contenu par celui du fichier <code>supabase/functions/sam-admin/index.ts</code> du dépôt GitHub (la première ligne commence par « // ===== »), puis <em>Deploy</em>.</li>
+             <li>Vérifiez que <em>Verify JWT</em> est désactivé dans <em>Details</em>.</li>
+           </ol>
+           <button type="button" class="adm-button" id="accRetry">Réessayer</button>`
+        : error.missing
         ? `<strong>La gestion des comptes depuis le site doit être installée une fois dans Supabase.</strong>
            <ol>
              <li>Supabase → <em>Edge Functions</em> → <em>Deploy a new function</em> → <em>Via Editor</em>.</li>
