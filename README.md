@@ -43,9 +43,10 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
    n'écrit qu'aux membres de l'équipe du projet, avec un très petit nombre de mails par heure.
    Pour inviter des producteurs :
    - *Authentication → Emails → SMTP Settings* : activer *Enable custom SMTP* et saisir
-     l'adresse d'envoi (ex. `no-reply@sudagrometeo.fr`), le nom (« SAM Outils »), puis
-     serveur, port, identifiant et mot de passe SMTP fournis par la messagerie du domaine
-     ou par Brevo (offre gratuite) ;
+     l'adresse d'envoi `sudagrometeo@gmail.com`, le nom (« SAM Outils »), serveur `smtp.gmail.com`,
+     port `465`, identifiant `sudagrometeo@gmail.com`, mot de passe = **mot de passe d'application**
+     Google (compte Google → Sécurité → Validation en deux étapes activée → Mots de passe
+     des applications), jamais le mot de passe habituel du compte ;
    - *Authentication → Rate Limits* : relever le nombre de mails par heure (ex. 30) ;
    - *Authentication → Emails → Templates* : coller le contenu de
      `supabase/emails/invitation.html` dans *Invite user* et de
