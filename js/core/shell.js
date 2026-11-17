@@ -9,12 +9,14 @@ import { profile } from './profile.js';
 import { stationStore, stationState } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-13.3';
+const APP_VERSION = '2026-11-17.1';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
   { id: 'irrigation', title: 'SAM Programmation irrigation', card: 'Program&shy;mation <br>irrigation', icon: 'toolIrrigation' },
   { id: 'bilan', title: 'SAM Bilan hydrique', card: 'Bilan <br>hydrique', icon: 'toolBilan' },
+  // Aperçu : visible des seuls administrateurs SAM tant que l'outil n'est pas validé.
+  { id: 'pilotage', title: 'SAM Pilotage irrigation', card: 'Pilotage <br>irrigation', icon: 'toolBilan', preview: true },
   { id: 'phenologie', title: 'SAM Suivi phénologique', card: 'Suivi <br>phéno&shy;logique', icon: 'toolPheno', admin: true },
   { id: 'tavelure', title: 'SAM Tavelure', card: 'Tavelure', icon: 'toolTavelure', admin: true },
   { id: 'piegeage', title: 'SAM Piégeage', card: 'Piégeage', icon: 'toolPiegeage', admin: true }
@@ -260,6 +262,7 @@ function renderAuth() {
   $('sam-nav-admin').hidden = !auth.isAdmin;
   $('sam-app').classList.toggle('is-admin', Boolean(auth.isAdmin));
   updateToolModePill();
+  if (activeTool && !activeTool.section) renderToolCards(activeTool.id);
 }
 
 async function handleLogout() {
@@ -273,8 +276,11 @@ async function handleLogout() {
 // ---------------------------------------------------------------------------
 // Cartes des outils
 // ---------------------------------------------------------------------------
+/** Outils en aperçu (preview) : réservés aux administrateurs. */
+const toolVisible = tool => !tool.preview || Boolean(auth.isAdmin);
+
 function renderToolCards(activeId) {
-  $('sam-tools').innerHTML = TOOLS.map(tool => `
+  $('sam-tools').innerHTML = TOOLS.filter(toolVisible).map(tool => `
     <a class="sam-tool-card${tool.id === activeId ? ' is-active' : ''}" href="#/${tool.id}" ${tool.id === activeId ? 'aria-current="page"' : ''}>
       <span class="sam-tool-card-icon"><img src="assets/img/tools/${tool.id}.png" alt="" width="40" height="40" decoding="async"></span>
       <span class="sam-tool-card-label">${tool.card}</span>
@@ -289,6 +295,7 @@ let activeTool = null;
 
 function updateToolModePill() {
   if (!activeTool) return setModePill('');
+  if (activeTool.preview) return setModePill('Aperçu équipe', 'admin');
   if (activeTool.admin || activeTool.adminOnly) {
     if (auth.isAdmin) setModePill('Mode administrateur', 'admin');
     else setModePill('Lecture seule', 'readonly');
@@ -547,13 +554,14 @@ function destroyDetachedCharts() {
 
 function routeFromHash() {
   const id = (window.location.hash || '').replace(/^#\/?/, '').split(/[/?]/)[0];
-  return TOOLS.find(t => t.id === id) || SECTIONS.find(t => t.id === id) || HIDDEN_TOOLS.find(t => t.id === id) || null;
+  return TOOLS.find(t => t.id === id && toolVisible(t)) || SECTIONS.find(t => t.id === id) || HIDDEN_TOOLS.find(t => t.id === id) || null;
 }
 
 function applyLayout(tool) {
   const withSidebar = tool.sidebar === 'stations';
   $('sam-app').classList.toggle('has-sidebar', withSidebar);
-  $('sam-top-brand').href = `#/${storage.get('lastTool', DEFAULT_TOOL)}`;
+  const last = storage.get('lastTool', DEFAULT_TOOL);
+  $('sam-top-brand').href = `#/${TOOLS.some(t => t.id === last && toolVisible(t)) ? last : DEFAULT_TOOL}`;
   if (!withSidebar) closeDrawer();
   else enterStationSidebar().catch(error => console.warn(error));
 }
@@ -635,7 +643,10 @@ function updateTopNav(tool) {
 function handleRoute() {
   const tool = routeFromHash();
   if (!tool) {
-    window.location.replace(`#/${storage.get('lastTool', DEFAULT_TOOL)}`);
+    // Outil inconnu ou réservé (aperçu) : retour au dernier outil accessible.
+    const last = storage.get('lastTool', DEFAULT_TOOL);
+    const ok = TOOLS.some(t => t.id === last && toolVisible(t));
+    window.location.replace(`#/${ok ? last : DEFAULT_TOOL}`);
     return;
   }
   if (TOOLS.includes(tool)) storage.set('lastTool', tool.id);

@@ -10,6 +10,7 @@ Application unique qui regroupe les six outils SAM et les données des stations 
 | Indicateurs agroclimatiques | Open-Meteo | lecture |
 | Programmation irrigation | Open-Meteo | lecture |
 | Bilan hydrique | Open-Meteo + parcelles | parcelles du compte (privées) |
+| Pilotage irrigation (FAO-56 Rev.1 2025, aperçu) | Open-Meteo + stations SAM + parcelles | administrateurs uniquement pendant la validation ; parcelles du compte (privées) |
 | Suivi phénologique | Supabase + Open-Meteo | lecture, saisie administrateur |
 | Tavelure | Supabase | lecture, saisie administrateur |
 | Piégeage | Supabase | lecture, saisie administrateur |
@@ -22,7 +23,9 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
 ## Mise en route Supabase (une seule fois)
 
 1. **SQL Editor** : coller et exécuter `supabase/schema.sql`, `supabase/stations.sql`
-   puis `supabase/connexion_comptes.sql` (lecture réservée aux comptes, profils, RIMpro).
+   puis `supabase/connexion_comptes.sql` (lecture réservée aux comptes, profils, RIMpro),
+   puis `supabase/pilotage.sql` (parcelles du Pilotage irrigation ; tant qu'il n'est pas exécuté,
+   l'outil garde les parcelles sur l'appareil et l'indique à l'écran).
 2. **Authentication → Sign In / Providers** : désactiver *Allow new users to sign up*.
 3. **Authentication → URL Configuration** : *Site URL* = adresse principale du site
    (aujourd'hui `https://sam.juju-chabat42.workers.dev`, plus tard le nom de domaine définitif).
@@ -65,6 +68,9 @@ css/app.css           styles du cadre
 css/tools/*.css       styles de chaque outil (limités à leur conteneur)
 js/core/*.js          connexion, profil, stations, lieux, période, navigation
 js/tools/*.js         un module par outil
+js/fao56/             moteur FAO-56 Rev.1 (2025) du Pilotage irrigation : ET₀, coefficients, bilan, conseil
+js/fao56/data/        tables FAO-56 2025 (cultures, sols, systèmes d'irrigation, paillages) avec leurs sources
+tests/fao56/          tests du moteur sur les exemples chiffrés de FAO-56 (node --test "tests/fao56/*.test.mjs")
 supabase/*.sql        tables, droits et règles d'accès, collecte des stations, imports
 supabase/functions/   fonction « sam-admin » (gestion des comptes depuis l'onglet Administration)
 supabase/emails/      modèles des mails d'invitation et de mot de passe (en français)
@@ -93,3 +99,24 @@ actuel du domaine, publier les outils sur un sous-domaine, par exemple `outils.s
   DNS actuel un enregistrement CNAME `outils` → `<projet>.pages.dev`.
 
 Une fois le domaine actif : le mettre en *Site URL* et dans les *Redirect URLs* de Supabase.
+
+## Pilotage irrigation (FAO-56 Rev.1, 2025)
+
+Outil en aperçu, visible des seuls administrateurs SAM (`preview: true` dans `js/core/shell.js`) ;
+il remplacera « Bilan hydrique » et « Programmation irrigation » après validation (les parcelles
+du Bilan hydrique se reprennent depuis l'outil : bouton « Reprendre mes parcelles »).
+
+- **Référence unique** : FAO (2025), *Crop evapotranspiration*, Irrigation and Drainage Paper 56 Rev.1,
+  https://doi.org/10.4060/cd6621en. Chaque coefficient affiché indique son tableau et sa page.
+- **ET₀** : Penman-Monteith FAO (Éq. 2.4) recalculée à partir des données horaires Open-Meteo
+  (réanalyse ERA5 jusqu'à J−8, prévision ensuite) ; une station SAM associée à la parcelle remplace
+  températures, humidité et pluie (vent et rayonnement restent Open-Meteo).
+- **Bilan** : coefficients doubles Kcb + Ke avec couche de surface (chap. 7), ajustement climatique
+  (Éq. 7.2), approche A&P à partir de la couverture mesurée (chap. 9), zone racinaire et stress Ks
+  (chap. 8), paillages (chap. 10). Méthode Kc simple en option.
+- **Conseil** : irrigations planifiées d'aujourd'hui à J+7 (dose nette et brute, m³/ha, durée de
+  poste), pendant la saison de culture uniquement.
+- **Catalogue** : 76 cultures, 184 classes (arboriculture, vigne, maraîchage, grandes cultures,
+  prairies), généré depuis le PDF FAO ; à ne pas modifier à la main (`js/fao56/data/cultures-2025.js`).
+- **Valeurs de terrain hors FAO-56**, signalées dans l'outil : profondeur racinaire des ligneux
+  (0,8 m par défaut), efficience d'application, dates de stades proposées, volume racinaire humecté.

@@ -1,0 +1,117 @@
+/* SAM Pilotage irrigation (FAO-56 Rev.1, 2025) — styles limités au conteneur .tool-pilotage */
+.tool-pilotage .pil { max-width: 1280px; margin: 0 auto; padding: 4px 0 48px; color: var(--sam-ink); }
+.tool-pilotage .hidden { display: none !important; }
+.tool-pilotage h2 { margin: 0 0 4px; font-size: 1.15rem; }
+.tool-pilotage h3 { margin: 0 0 10px; font-size: 1rem; }
+.tool-pilotage h4 { margin: 16px 0 8px; font-size: .92rem; }
+.tool-pilotage p { line-height: 1.45; }
+.tool-pilotage .pil-muted { color: var(--sam-muted); }
+.tool-pilotage small { font-size: .8rem; }
+
+/* Barre de parcelle et onglets */
+.tool-pilotage .pil-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; margin-bottom: 12px; }
+.tool-pilotage .pil-parcelle { display: grid; gap: 4px; flex: 1 1 280px; font-size: .82rem; font-weight: 600; color: var(--sam-ink-2); }
+.tool-pilotage .pil-parcelle select { min-height: 42px; }
+.tool-pilotage select.sam-input { padding-right: 28px; }
+.tool-pilotage .pil-badge { margin-left: auto; padding: 4px 10px; border: 1px solid var(--sam-red-100); border-radius: 999px; background: var(--sam-red-50); color: var(--sam-red-800); font-size: .74rem; font-weight: 700; white-space: nowrap; }
+.tool-pilotage .pil-alerte { margin: 0 0 12px; padding: 10px 14px; border: 1px solid #f1d28a; border-radius: var(--sam-radius-sm); background: #fff8e6; font-size: .88rem; }
+.tool-pilotage .pil-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--sam-line); overflow-x: auto; scrollbar-width: none; }
+.tool-pilotage .pil-tabs button { flex: 0 0 auto; padding: 10px 14px; border: 0; border-bottom: 3px solid transparent; background: none; color: var(--sam-muted); font: inherit; font-weight: 600; cursor: pointer; }
+.tool-pilotage .pil-tabs button:hover { color: var(--sam-ink); }
+.tool-pilotage .pil-tabs button.is-active { border-bottom-color: var(--sam-red-700); color: var(--sam-red-800); }
+
+/* Cartes et grilles */
+.tool-pilotage .pil-card { margin: 0 0 14px; padding: 16px 18px; border: 1px solid var(--sam-line); border-radius: var(--sam-radius); background: #fff; box-shadow: var(--sam-shadow-sm); }
+.tool-pilotage .pil-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; margin-bottom: 8px; }
+.tool-pilotage .pil-card-head h3 { margin: 0; }
+.tool-pilotage .pil-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; }
+.tool-pilotage .pil-grid > .pil-card { margin: 0 0 14px; }
+.tool-pilotage .pil-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tool-pilotage .pil-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.tool-pilotage .pil-head p { margin: 0; }
+.tool-pilotage .pil-inline { display: inline-flex; align-items: center; gap: 8px; font-size: .86rem; font-weight: 600; color: var(--sam-ink-2); }
+.tool-pilotage .pil-inline select { width: auto; min-height: 38px; }
+.tool-pilotage .pil-vide { text-align: left; }
+.tool-pilotage .pil-attente { display: flex; align-items: center; gap: 10px; color: var(--sam-muted); }
+.tool-pilotage .pil-erreur { border-color: var(--sam-red-100); background: var(--sam-red-50); }
+.tool-pilotage .pil-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.tool-pilotage .pil-actions-tight { margin-top: 8px; }
+.tool-pilotage .pil-actions-end { justify-content: flex-end; }
+.tool-pilotage .pil-danger { color: var(--sam-red-800); }
+
+/* Conseil */
+.tool-pilotage .pil-reco { border-left: 4px solid var(--sam-red-700); }
+.tool-pilotage .pil-kicker { margin: 0 0 6px; color: var(--sam-muted); font-size: .8rem; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+.tool-pilotage .pil-reco-titre { margin: 0 0 6px; font-size: 1.3rem; font-weight: 800; }
+.tool-pilotage .pil-reco-titre.is-irriguer { color: var(--sam-red-800); }
+.tool-pilotage .pil-reco-titre.is-ok { color: var(--sam-green-700); }
+.tool-pilotage .pil-reco-dose { margin: 0 0 10px; font-size: 1rem; }
+.tool-pilotage .pil-plan { margin: 0 0 10px; padding: 0; list-style: none; border-top: 1px solid var(--sam-line-2); }
+.tool-pilotage .pil-plan li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--sam-line-2); font-size: .9rem; }
+.tool-pilotage .pil-plan li span:first-child { font-weight: 600; }
+.tool-pilotage .pil-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-content: start; }
+.tool-pilotage .pil-kpis-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tool-pilotage .pil-kpi { display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--sam-line); border-radius: var(--sam-radius-sm); background: var(--sam-bg-soft); }
+.tool-pilotage .pil-kpi span { color: var(--sam-muted); font-size: .78rem; font-weight: 600; }
+.tool-pilotage .pil-kpi b { font-size: 1.22rem; }
+.tool-pilotage .pil-kpi small { color: var(--sam-muted); }
+.tool-pilotage .pil-kpi.is-alerte { border-color: #f3c2c8; background: var(--sam-red-50); }
+.tool-pilotage .pil-kpi.is-alerte b { color: var(--sam-red-800); }
+.tool-pilotage .pil-chart { position: relative; height: 340px; }
+.tool-pilotage .pil-note { margin: 8px 0 0; color: var(--sam-muted); font-size: .84rem; }
+.tool-pilotage details > summary { cursor: pointer; font-weight: 700; }
+.tool-pilotage details[open] > summary { margin-bottom: 10px; }
+.tool-pilotage .pil-hyp ul { margin: 0; padding-left: 18px; }
+.tool-pilotage .pil-hyp li { margin: 0 0 8px; font-size: .9rem; line-height: 1.45; }
+.tool-pilotage .pil-src { display: inline-block; padding: 0 6px; border-radius: 999px; background: #eef3fa; color: #2b5d8f; font-size: .72rem; font-weight: 600; white-space: nowrap; vertical-align: 1px; }
+
+/* Tableaux */
+.tool-pilotage .pil-table-wrap { overflow-x: auto; }
+.tool-pilotage .pil-table { width: 100%; border-collapse: collapse; font-size: .84rem; font-variant-numeric: tabular-nums; }
+.tool-pilotage .pil-table th, .tool-pilotage .pil-table td { padding: 6px 8px; border-bottom: 1px solid var(--sam-line-2); text-align: right; vertical-align: top; }
+.tool-pilotage .pil-table th:first-child, .tool-pilotage .pil-table td:first-child { text-align: left; }
+.tool-pilotage .pil-table th { position: sticky; top: 0; background: #fff; color: var(--sam-muted); font-weight: 600; white-space: nowrap; }
+.tool-pilotage .pil-table tr.is-prev td { background: #f6f9fd; color: #34506f; }
+.tool-pilotage .pil-table tr.is-stress td:nth-child(6) { color: var(--sam-red-800); font-weight: 700; }
+.tool-pilotage .pil-table em { color: var(--sam-green-700); font-style: normal; font-weight: 600; }
+.tool-pilotage #pil-details .pil-table-wrap { max-height: 520px; overflow: auto; }
+.tool-pilotage .pil-suppr { width: 30px; height: 30px; border: 1px solid var(--sam-line); border-radius: 8px; background: #fff; color: var(--sam-muted); cursor: pointer; }
+.tool-pilotage .pil-suppr:hover { border-color: var(--sam-red-100); color: var(--sam-red-800); }
+
+/* Formulaires */
+.tool-pilotage .pil-form fieldset { min-width: 0; }
+.tool-pilotage .pil-form legend { padding: 0 6px; margin-left: -6px; font-size: 1rem; font-weight: 700; }
+.tool-pilotage .pil-form-head h2 { margin: 0; }
+.tool-pilotage .pil-form-head .pil-actions { margin-top: 8px; }
+.tool-pilotage .pil-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px 14px; margin: 10px 0; }
+.tool-pilotage .pil-fields .pil-large { grid-column: span 2; }
+.tool-pilotage .sam-field select, .tool-pilotage .sam-field input { min-height: 40px; }
+.tool-pilotage .pil-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: .9rem; }
+.tool-pilotage .pil-check input { width: 18px; height: 18px; accent-color: var(--sam-red-700); }
+.tool-pilotage .pil-sub { margin: 10px 0 0; padding: 10px 12px; border: 1px dashed var(--sam-line); border-radius: var(--sam-radius-sm); background: var(--sam-bg-soft); }
+.tool-pilotage .pil-sub > summary { font-weight: 600; font-size: .92rem; }
+.tool-pilotage .pil-ref { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 6px 0; padding: 8px 12px; border-radius: var(--sam-radius-sm); background: #f5f8fc; font-size: .86rem; }
+.tool-pilotage .pil-gdd { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin: 6px 0; }
+.tool-pilotage .pil-gdd .sam-field { min-width: 240px; }
+.tool-pilotage .pil-texture { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tool-pilotage .pil-texture input { width: 100px; min-height: 38px; }
+.tool-pilotage .pil-lieu { position: relative; }
+.tool-pilotage .pil-lieu-res { position: absolute; top: 100%; left: 0; right: 0; z-index: 5; display: grid; background: #fff; border-radius: 8px; box-shadow: var(--sam-shadow); }
+.tool-pilotage .pil-lieu-res:empty { display: none; }
+.tool-pilotage .pil-lieu-res button { padding: 8px 12px; border: 0; border-bottom: 1px solid var(--sam-line-2); background: none; text-align: left; font: inherit; cursor: pointer; }
+.tool-pilotage .pil-lieu-res button:hover { background: var(--sam-bg-soft); }
+.tool-pilotage .pil-anciennes { margin: 10px 0 0; padding: 0; list-style: none; }
+.tool-pilotage .pil-anciennes li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--sam-line-2); }
+
+@media (max-width: 900px) {
+  .tool-pilotage .pil-grid, .tool-pilotage .pil-grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .tool-pilotage .pil-kpis-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .tool-pilotage .pil-card { padding: 14px; }
+  .tool-pilotage .pil-badge { margin-left: 0; }
+  .tool-pilotage .pil-fields .pil-large { grid-column: auto; }
+  .tool-pilotage .pil-chart { height: 280px; }
+  .tool-pilotage .pil-reco-titre { font-size: 1.12rem; }
+  .tool-pilotage .pil-plan li { flex-direction: column; gap: 2px; }
+}
