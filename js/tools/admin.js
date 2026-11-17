@@ -301,7 +301,7 @@ export async function mount(root, ctx) {
 
   function accountStatus(a) {
     if (a.banned) return { key: 'banned', label: 'Suspendu' };
-    if (!a.confirmed) return { key: 'invited', label: 'Invitation envoyée' };
+    if (!a.confirmed) return { key: 'invited', label: 'Invité, pas encore activé' };
     if (!a.last_sign_in_at) return { key: 'idle', label: 'Jamais connecté' };
     return { key: 'active', label: 'Actif' };
   }
