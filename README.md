@@ -24,7 +24,7 @@ Application unique qui regroupe les six outils SAM et les données des stations 
 | Admin | collègues SudExpé | en plus : saisie Phénologie, Tavelure, Piégeage — rien d'autre |
 | Full admin | responsable du programme | tout : comptes, rôles, stations, capteurs, fiches stations, synchronisation |
 
-Tous les graphiques ont un bouton « Agrandir » (à côté du CSV) qui les affiche en pleine page.
+Tous les graphiques ont un bouton « Agrandir » en haut à droite (à côté du CSV quand celui-ci est dans l’en-tête du graphique) qui les affiche en pleine page.
 
 Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
 (`https://sam.juju-chabat42.workers.dev`, redéployé à chaque poussée sur `main`) et par GitHub Pages
