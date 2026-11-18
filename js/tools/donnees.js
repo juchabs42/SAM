@@ -203,6 +203,8 @@ export async function mount(root, ctx) {
   const sensorName = code => sensorLabels[code]?.libelle || BASE_SENSORS[code]?.[0] || code;
   const sensorUnit = code => sensorLabels[code]?.unite || BASE_SENSORS[code]?.[1] || '';
   const selected = () => store.selected;
+  // Droits du compte sur la station (Administration > Stations > accès).
+  const access = () => selected()?.acces || { meteo: true, irrigation: true };
 
   function renderAdmin() {
     root.querySelectorAll('.don-admin').forEach(el => el.classList.toggle('hidden', !isAdmin()));
@@ -236,13 +238,13 @@ export async function mount(root, ctx) {
     const token = ++loadToken;
     const since = new Date(Date.now() - 24 * HOUR).toISOString();
     const [rows, last24] = await Promise.all([
-      fetchAll(() => supabase.from('station_mesures')
+      fetchAll(() => supabase.from(store.mesuresTable)
         .select('mesure_le,t_air,hr,pluie,autres')
         .eq('station_id', station.id)
         .gte('mesure_le', parisInstant(p.start).toISOString())
         .lte('mesure_le', parisInstant(p.end, true).toISOString())
         .order('mesure_le', { ascending: true })),
-      fetchAll(() => supabase.from('station_mesures')
+      fetchAll(() => supabase.from(store.mesuresTable)
         .select('mesure_le,t_air,hr,pluie,autres')
         .eq('station_id', station.id)
         .gte('mesure_le', since)
@@ -250,7 +252,7 @@ export async function mount(root, ctx) {
     ]);
     let last = last24.length ? toRow(last24[last24.length - 1]) : null;
     if (!last && station.derniere_mesure) {
-      const { data } = await supabase.from('station_mesures').select('mesure_le,t_air,hr,pluie,autres')
+      const { data } = await supabase.from(store.mesuresTable).select('mesure_le,t_air,hr,pluie,autres')
         .eq('station_id', station.id).order('mesure_le', { ascending: false }).limit(1);
       if (data?.[0]) last = toRow(data[0]);
     }
@@ -291,7 +293,7 @@ export async function mount(root, ctx) {
     $('donKpis').innerHTML = [
       kpi('Température', last?.t !== null && last ? `${formatNumber(last.t, 1)}<small> °C</small>` : '—', last ? whenLabel(last.at) : 'aucune mesure'),
       kpi('Humidité relative', last?.hr !== null && last ? `${formatNumber(last.hr, 0)}<small> %</small>` : '—', last ? whenLabel(last.at) : ''),
-      kpi('Pluie 24 h', recent.rows.length ? `${formatNumber(rain24, 1)}<small> mm</small>` : '—', 'dernières 24 heures'),
+      kpi('Pluie 24 h', recent.rows.length && access().meteo ? `${formatNumber(rain24, 1)}<small> mm</small>` : '—', 'dernières 24 heures'),
       kpi('T min / T max du jour', minRow ? `${formatNumber(minRow.t, 1)} / ${formatNumber(maxRow.t, 1)}<small> °C</small>` : '—',
         minRow ? `aujourd’hui · min ${hourOf(minRow.at)} · max ${hourOf(maxRow.at)}` : 'aucune mesure aujourd’hui')
     ].join('');
@@ -561,23 +563,35 @@ export async function mount(root, ctx) {
   // -------------------------------------------------------------------------
   // Onglets
   // -------------------------------------------------------------------------
+  const NOT_SHARED = {
+    meteo: 'Les données météo de cette station ne sont pas partagées avec votre compte.',
+    irrigation: 'Les données d’irrigation de cette station (tensiomètres, sondes, dendromètres) ne sont pas partagées avec votre compte.'
+  };
+
   function renderMeteo() {
     const base = timeBase();
-    const empty = !hourly.length;
-    $('donMeteoEmpty').textContent = empty ? 'Aucune mesure reçue sur cette période.' : '';
+    const blocked = !access().meteo;
+    const empty = blocked || !hourly.length;
+    $('donMeteoEmpty').textContent = blocked ? NOT_SHARED.meteo : empty ? 'Aucune mesure reçue sur cette période.' : '';
     $('donMeteoEmpty').classList.toggle('hidden', !empty);
+    $('donDaily').classList.toggle('hidden', blocked);
     if (empty) { destroyCharts(); $('donMeteoCharts').innerHTML = ''; }
     else renderChartList($('donMeteoCharts'), meteoSpecs(base), base);
-    renderDailyTable();
+    if (!blocked) renderDailyTable();
   }
 
   function renderIrrigation() {
     const base = timeBase();
     const empty = !hourly.length;
-    const { specs } = irrigationSpecs(base);
-    $('donIrrigationEmpty').textContent = empty ? 'Aucune mesure reçue sur cette période.' : '';
-    $('donIrrigationEmpty').classList.toggle('hidden', !empty);
-    if (empty) { destroyCharts(); $('donIrrigationCharts').innerHTML = ''; }
+    const rights = access();
+    let { specs } = irrigationSpecs(base);
+    if (!rights.irrigation) specs = specs.filter(spec => spec.id === 'irr-rain');
+    if (!rights.meteo) specs = specs.filter(spec => spec.id !== 'irr-rain');
+    const blocked = !specs.length && !rights.irrigation;
+    const notice = !rights.irrigation ? NOT_SHARED.irrigation : '';
+    $('donIrrigationEmpty').textContent = empty ? 'Aucune mesure reçue sur cette période.' : notice;
+    $('donIrrigationEmpty').classList.toggle('hidden', !empty && !notice);
+    if (empty || blocked) { destroyCharts(); $('donIrrigationCharts').innerHTML = ''; }
     else renderChartList($('donIrrigationCharts'), specs, base);
   }
 
@@ -586,6 +600,10 @@ export async function mount(root, ctx) {
     const station = selected();
     const box = $('donRimpro');
     if (!station) { box.innerHTML = ''; return; }
+    if (!access().meteo) {
+      box.innerHTML = `<div class="don-card don-rim-empty"><h3>Données non partagées</h3><p>${NOT_SHARED.meteo} Les modèles RIMpro, calculés à partir de la météo de la station, ne sont donc pas affichés.</p></div>`;
+      return;
+    }
     const id = (station.rimpro_id || '').trim();
     if (!id) {
       box.innerHTML = `<div class="don-card don-rim-empty">

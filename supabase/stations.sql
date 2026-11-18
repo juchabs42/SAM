@@ -135,7 +135,12 @@ insert into public.station_capteurs (code, libelle, unite, ordre) values
   ('bat', 'Batterie', 'V', 90)
 on conflict (code) do update set libelle = excluded.libelle, unite = excluded.unite, ordre = excluded.ordre;
 
--- Résumé journalier (jour civil, heure de Paris)
+-- Résumé journalier (jour civil, heure de Paris). Une fois acces_stations.sql exécuté,
+-- la vue est calculée sur les mesures filtrées : on ne la recrée pas ici.
+do $do$
+begin
+  if to_regclass('public.station_mesures_visibles') is null then
+    execute $v$
 create or replace view public.station_journalier
 with (security_invoker = true) as
 select
@@ -151,17 +156,32 @@ select
   count(*)::integer as nb_mesures
 from public.station_mesures m
 group by m.station_id, (m.mesure_le at time zone 'Europe/Paris')::date;
+    $v$;
+  end if;
+end $do$;
 
 -- -----------------------------------------------------------------------------
--- 3. Droits : lecture par les comptes connectés, gestion par les « full admin »
+-- 3. Droits : lecture par les comptes connectés (détail par station : acces_stations.sql),
+--    gestion par les « full admin »
 -- -----------------------------------------------------------------------------
 alter table public.stations enable row level security;
 alter table public.station_mesures enable row level security;
 alter table public.station_capteurs enable row level security;
 
-drop policy if exists stations_lecture on public.stations;
-create policy stations_lecture on public.stations
-  for select to authenticated using (publique or (select public.is_sam_admin()));
+-- Lecture : règles simples tant que acces_stations.sql (droits par station) n'est pas exécuté.
+do $$
+begin
+  if to_regprocedure('public.sam_acces_stations()') is null then
+    drop policy if exists stations_lecture on public.stations;
+    create policy stations_lecture on public.stations
+      for select to authenticated using (publique or (select public.is_sam_admin()));
+    drop policy if exists station_mesures_lecture on public.station_mesures;
+    create policy station_mesures_lecture on public.station_mesures
+      for select to authenticated using (
+        exists (select 1 from public.stations s where s.id = station_id and (s.publique or (select public.is_sam_admin())))
+      );
+  end if;
+end $$;
 drop policy if exists stations_admin_maj on public.stations;
 create policy stations_admin_maj on public.stations
   for update to authenticated using (public.is_sam_full_admin()) with check (public.is_sam_full_admin());
@@ -171,12 +191,6 @@ create policy stations_admin_ajout on public.stations
 drop policy if exists stations_admin_suppr on public.stations;
 create policy stations_admin_suppr on public.stations
   for delete to authenticated using (public.is_sam_full_admin());
-
-drop policy if exists station_mesures_lecture on public.station_mesures;
-create policy station_mesures_lecture on public.station_mesures
-  for select to authenticated using (
-    exists (select 1 from public.stations s where s.id = station_id and (s.publique or (select public.is_sam_admin())))
-  );
 
 drop policy if exists station_capteurs_lecture on public.station_capteurs;
 create policy station_capteurs_lecture on public.station_capteurs for select to authenticated using (true);

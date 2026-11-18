@@ -85,7 +85,7 @@ export async function mount(root, ctx) {
     const since = new Date(Date.now() - 24 * HOUR).toISOString();
     const rows = [];
     for (let from = 0; ; from += PAGE) {
-      const { data, error } = await ctx.supabase.from('station_mesures')
+      const { data, error } = await ctx.supabase.from(store.mesuresTable)
         .select('station_id,mesure_le,t_air,hr,pluie')
         .gte('mesure_le', since)
         .order('mesure_le', { ascending: true })
@@ -128,7 +128,9 @@ export async function mount(root, ctx) {
     const sub = [station.commune, Number.isFinite(station.altitude) ? `${Math.round(station.altitude)} m` : ''].filter(Boolean).join(' · ');
     const when = station.derniere_mesure && state.key !== 'pending' ? ` · ${whenLabel(new Date(station.derniere_mesure))}` : '';
     let values = '';
-    if (info) {
+    if (station.acces && !station.acces.meteo) {
+      values = '<span class="carte-tip-values is-loading">Données météo non partagées avec votre compte</span>';
+    } else if (info) {
       values = `<span class="carte-tip-values">
         <span><b>${formatNumber(info.t, 1)}</b> °C</span>
         <span><b>${formatNumber(info.hr, 0)}</b> % HR</span>

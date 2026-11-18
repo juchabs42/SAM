@@ -23,6 +23,13 @@ Application unique qui regroupe les six outils SAM et les données des stations 
 | Admin | collègues SudExpé | en plus : saisie Phénologie, Tavelure, Piégeage — rien d'autre |
 | Full admin | responsable du programme | tout : comptes, rôles, stations, capteurs, fiches stations, synchronisation |
 
+**Accès aux données des stations** (Administration → Stations → Modifier) : « Visible par tous
+les comptes » coché, tout le monde voit tout. Décoché, on règle séparément les données météo
+(température, humidité, pluie, humectation, RIMpro) et les données irrigation (tensiomètres,
+sondes capacitives, dendromètres) : tous les comptes, ou seulement les comptes cochés. Le filtrage
+est fait par la base (vue `station_mesures_visibles`) ; admins et full admins voient tout. La
+famille de chaque capteur se règle dans Administration → Capteurs (colonne « Données »).
+
 Tous les graphiques ont un bouton « Agrandir » en haut à droite (à côté du CSV quand celui-ci est dans l’en-tête du graphique) qui les affiche en pleine page.
 
 Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
@@ -35,7 +42,8 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
    puis `supabase/connexion_comptes.sql` (lecture réservée aux comptes, profils, RIMpro),
    puis `supabase/pilotage.sql` (parcelles du Bilan irrigation ; tant qu'il n'est pas exécuté,
    l'outil garde les parcelles sur l'appareil et l'indique à l'écran),
-   puis `supabase/roles.sql` (trois rôles : normal, admin, full admin).
+   puis `supabase/roles.sql` (trois rôles : normal, admin, full admin),
+   puis `supabase/acces_stations.sql` (qui voit les données météo / irrigation de chaque station).
 2. **Authentication → Sign In / Providers** : désactiver *Allow new users to sign up*.
 3. **Authentication → URL Configuration** : *Site URL* = adresse principale du site
    (aujourd'hui `https://sam.juju-chabat42.workers.dev`, plus tard le nom de domaine définitif).
@@ -86,6 +94,7 @@ tests/fao56/          tests du moteur sur les exemples chiffrés de FAO-56 (node
 supabase/*.sql        tables, droits et règles d'accès, collecte des stations, imports
 supabase/functions/   fonction « sam-admin » (gestion des comptes depuis l'onglet Administration)
 supabase/roles.sql    rôles normal / admin / full admin
+supabase/acces_stations.sql  accès aux données météo / irrigation, station par station
 supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bilan hydrique
 supabase/emails/      modèles des mails d'invitation et de mot de passe (en français)
 _headers              en-têtes de sécurité (hébergement Cloudflare)

@@ -293,3 +293,22 @@
   .tool-admin .adm-chart { height: 220px; }
   .tool-admin .adm-form { padding: 18px 16px; }
 }
+
+/* Fiche station : accès aux données météo / irrigation */
+.tool-admin .adm-access { display: grid; gap: 12px; margin: 0; padding: 12px 14px; border: 1px solid var(--sam-line); border-radius: 10px; background: var(--sam-bg-soft, #f7f7f8); }
+.tool-admin .adm-access legend { padding: 0 6px; font-weight: 700; }
+.tool-admin .adm-access-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
+.tool-admin .adm-access-mode { display: grid; gap: 6px; align-content: start; }
+.tool-admin .adm-access-mode .adm-muted { margin-top: -4px; font-size: .82rem; }
+.tool-admin .adm-access-accounts { display: grid; gap: 8px; }
+.tool-admin .adm-access-accounts input[type="search"] { width: 100%; max-width: none; box-sizing: border-box; }
+.tool-admin .adm-access-table { max-height: 260px; overflow: auto; border: 1px solid var(--sam-line); border-radius: 8px; background: #fff; }
+.tool-admin .adm-access-table .adm-table { margin: 0; }
+.tool-admin .adm-access-table th:not(:first-child),
+.tool-admin .adm-access-table td:not(:first-child) { width: 92px; text-align: center; }
+.tool-admin .adm-access-table td .adm-muted { display: block; }
+.tool-admin .adm-access-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--sam-red-700); }
+.tool-admin .adm-access-table input:disabled { opacity: .35; }
+@media (max-width: 640px) {
+  .tool-admin .adm-access-modes { grid-template-columns: 1fr; }
+}

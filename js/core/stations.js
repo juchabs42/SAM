@@ -28,6 +28,8 @@ export const stationStore = {
   get loaded() { return state.loaded; },
   get error() { return state.error; },
   get selectedId() { return state.selectedId; },
+  /** Table à lire pour les mesures : la vue filtrée selon les droits du compte quand elle existe. */
+  get mesuresTable() { return state.mesures || 'station_mesures'; },
   get selected() { return state.list.find(s => s.id === state.selectedId) || null; },
   onChange: fn => emitter.on(fn),
 
@@ -38,9 +40,18 @@ export const stationStore = {
         // Les favoris du compte décident de la station ouverte par défaut.
         await profile.load().catch(() => null);
         if (!auth.client) throw new Error('Connexion à la base indisponible.');
-        const { data, error } = await auth.client.from('stations').select('*').order('nom');
+        const [{ data, error }, rights] = await Promise.all([
+          auth.client.from('stations').select('*').order('nom'),
+          auth.client.rpc('sam_acces_stations')
+        ]);
         if (error) throw error;
-        state.list = data || [];
+        // Droits du compte sur chaque station (acces_stations.sql). Sans ce script : tout est lisible.
+        const map = rights.error ? null : new Map((rights.data || []).map(r => [r.station_id, r]));
+        state.list = (data || []).map(station => ({
+          ...station,
+          acces: map ? { meteo: Boolean(map.get(station.id)?.meteo), irrigation: Boolean(map.get(station.id)?.irrigation) } : { meteo: true, irrigation: true }
+        }));
+        state.mesures = map ? 'station_mesures_visibles' : 'station_mesures';
         state.loaded = true;
         state.error = null;
       })().catch(error => {

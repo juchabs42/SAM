@@ -53,7 +53,8 @@ end $$;
 -- Stations du réseau SAM
 do $$
 begin
-  if to_regclass('public.stations') is not null then
+  -- Droits par station (acces_stations.sql) déjà en place : on n'y touche pas.
+  if to_regclass('public.stations') is not null and to_regprocedure('public.sam_acces_stations()') is null then
     drop policy if exists stations_lecture on public.stations;
     create policy stations_lecture on public.stations
       for select to authenticated using (publique or (select public.is_sam_admin()));

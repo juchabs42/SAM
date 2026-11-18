@@ -171,6 +171,29 @@ const TEMPLATE = `
         <label class="adm-check"><input type="checkbox" id="staActive"> Collecte automatique des mesures</label>
         <label class="adm-check"><input type="checkbox" id="staPublique"> Visible par tous les comptes</label>
       </div>
+      <fieldset class="adm-access hidden" id="staAccess">
+        <legend>Qui peut voir les données de cette station ?</legend>
+        <div class="adm-access-modes">
+          <div class="adm-access-mode">
+            <strong>Données météo</strong>
+            <span class="adm-muted">température, humidité, pluie, humectation, modèles RIMpro</span>
+            <label class="adm-check"><input type="radio" name="staMeteo" value="tous"> Accessibles à tous les comptes</label>
+            <label class="adm-check"><input type="radio" name="staMeteo" value="comptes"> Seulement les comptes cochés ci-dessous</label>
+          </div>
+          <div class="adm-access-mode">
+            <strong>Données irrigation</strong>
+            <span class="adm-muted">tensiomètres, sondes capacitives, dendromètres</span>
+            <label class="adm-check"><input type="radio" name="staIrrigation" value="tous"> Accessibles à tous les comptes</label>
+            <label class="adm-check"><input type="radio" name="staIrrigation" value="comptes"> Seulement les comptes cochés ci-dessous</label>
+          </div>
+        </div>
+        <div class="adm-access-accounts hidden" id="staAccounts">
+          <input type="search" class="adm-input" id="staAccountSearch" placeholder="Rechercher un compte (nom, adresse, structure)" autocomplete="off">
+          <div class="adm-access-table" id="staAccountList"></div>
+        </div>
+        <p class="adm-hint">Les comptes admin et full admin voient toujours toutes les données.</p>
+      </fieldset>
+      <p class="adm-hint hidden" id="staAccessSetup">Pour choisir les comptes qui voient les données météo et irrigation, exécutez une fois <code>supabase/acces_stations.sql</code> dans Supabase (SQL Editor).</p>
       <label class="adm-field">Commentaire<textarea id="staCommentaire" class="adm-input" rows="2"></textarea></label>
       <p class="adm-message" id="staMessage" role="status"></p>
       <div class="adm-dialog-actions">
@@ -494,6 +517,13 @@ export async function mount(root, ctx) {
     renderStations();
   }
 
+  // Résumé des accès d'une station non visible par tous.
+  function accessBadge(s) {
+    if (!('acces_meteo' in s)) return '<span class="adm-badge is-warn">Masquée</span>';
+    const label = mode => (mode === 'tous' ? 'tous' : 'comptes choisis');
+    return `<span class="adm-badge is-warn" title="Station non visible par tous les comptes">Météo : ${label(s.acces_meteo)} · Irrigation : ${label(s.acces_irrigation)}</span>`;
+  }
+
   function renderStations() {
     if (store.error) {
       $('staSummary').textContent = '';
@@ -528,7 +558,7 @@ export async function mount(root, ctx) {
           const flags = [
             s.installee === false ? '<span class="adm-badge">Pas installée</span>' : '',
             s.active === false ? '<span class="adm-badge is-warn">Collecte arrêtée</span>' : '',
-            s.publique === false ? '<span class="adm-badge is-warn">Masquée</span>' : '',
+            s.publique === false ? accessBadge(s) : '',
             !Number.isFinite(s.latitude) ? '<span class="adm-badge is-warn">Sans coordonnées</span>' : ''
           ].filter(Boolean).join('') || '<span class="adm-muted">—</span>';
           const empty = !s.premiere_mesure && !s.derniere_mesure;
@@ -609,6 +639,7 @@ export async function mount(root, ctx) {
     $('staActive').checked = station ? station.active !== false : true;
     $('staPublique').checked = station ? station.publique !== false : true;
     $('staCommentaire').value = station?.commentaire || '';
+    setupAccess(station);
     $('staMessage').className = 'adm-message is-info';
     $('staMessage').textContent = station ? '' : 'Une station active est collectée automatiquement toutes les 30 minutes (historique des 120 derniers jours au premier passage).';
     $('staDialog').showModal();
@@ -675,6 +706,107 @@ export async function mount(root, ctx) {
     }
   }));
 
+  // ---------------------------------------------------------------------------
+  // Accès aux données de la station (météo / irrigation, compte par compte)
+  // ---------------------------------------------------------------------------
+  const access = { supported: false, grants: new Map(), accounts: [], loadError: null };
+  const radio = name => root.querySelector(`input[name="${name}"]:checked`)?.value || 'tous';
+  const setRadio = (name, value) => { root.querySelectorAll(`input[name="${name}"]`).forEach(r => { r.checked = r.value === value; }); };
+
+  async function setupAccess(station) {
+    // Colonnes absentes : acces_stations.sql pas encore exécuté.
+    access.supported = !store.list.length || 'acces_meteo' in (store.list[0] || {});
+    $('staAccessSetup').classList.toggle('hidden', access.supported);
+    access.grants = new Map();
+    access.loadError = null;
+    setRadio('staMeteo', station?.acces_meteo || 'tous');
+    setRadio('staIrrigation', station?.acces_irrigation || 'tous');
+    $('staAccountSearch').value = '';
+    refreshAccess();
+    if (!access.supported) return;
+    try {
+      const [grants, accounts] = await Promise.all([
+        station ? supabase.from('station_acces').select('user_id,meteo,irrigation').eq('station_id', station.id) : Promise.resolve({ data: [] }),
+        state.accounts ? Promise.resolve({ accounts: state.accounts }) : callAdmin('list')
+      ]);
+      if (grants.error) throw grants.error;
+      access.grants = new Map((grants.data || []).map(g => [g.user_id, { meteo: g.meteo, irrigation: g.irrigation }]));
+      if (!state.accounts) state.accounts = accounts.accounts || [];
+    } catch (error) {
+      access.loadError = error;
+    }
+    renderAccessAccounts();
+  }
+
+  function refreshAccess() {
+    const shared = $('staPublique').checked;
+    $('staAccess').classList.toggle('hidden', shared || !access.supported);
+    const meteo = radio('staMeteo') === 'comptes';
+    const irrigation = radio('staIrrigation') === 'comptes';
+    $('staAccounts').classList.toggle('hidden', !meteo && !irrigation);
+    $('staAccountList').querySelectorAll('input[data-kind="meteo"]').forEach(i => { i.disabled = !meteo; });
+    $('staAccountList').querySelectorAll('input[data-kind="irrigation"]').forEach(i => { i.disabled = !irrigation; });
+  }
+
+  function renderAccessAccounts() {
+    const box = $('staAccountList');
+    if (access.loadError) {
+      box.innerHTML = `<p class="adm-error">Liste des comptes indisponible : ${escapeHtml(access.loadError.message || access.loadError)}</p>`;
+      return;
+    }
+    const q = $('staAccountSearch').value.trim().toLowerCase();
+    // Les admins voient déjà tout : seuls les comptes « normal » sont proposés.
+    const list = (state.accounts || [])
+      .filter(a => (a.role || (a.admin ? 'full' : 'normal')) === 'normal')
+      .filter(a => !q || [a.email, a.prenom, a.nom, a.structure, a.commune].some(v => String(v || '').toLowerCase().includes(q)))
+      .sort((a, b) => accountLabel(a).localeCompare(accountLabel(b), 'fr'));
+    if (!list.length) {
+      box.innerHTML = `<p class="adm-muted">${q ? 'Aucun compte ne correspond.' : 'Aucun compte « normal » pour le moment : invitez d’abord les producteurs (onglet Comptes).'}</p>`;
+      return;
+    }
+    box.innerHTML = `<table class="adm-table is-compact">
+      <thead><tr><th>Compte</th><th>Météo</th><th>Irrigation</th></tr></thead>
+      <tbody>${list.map(a => {
+        const g = access.grants.get(a.id) || {};
+        const sub = [a.structure, accountLabel(a) === a.email ? null : a.email].filter(Boolean).join(" · ");
+        return `<tr data-user="${escapeHtml(a.id)}">
+          <td data-label="Compte"><strong>${escapeHtml(accountLabel(a))}</strong><span class="adm-muted">${escapeHtml(sub)}</span></td>
+          <td data-label="Météo"><input type="checkbox" data-kind="meteo" aria-label="Données météo pour ${escapeHtml(accountLabel(a))}"${g.meteo ? ' checked' : ''}></td>
+          <td data-label="Irrigation"><input type="checkbox" data-kind="irrigation" aria-label="Données irrigation pour ${escapeHtml(accountLabel(a))}"${g.irrigation ? ' checked' : ''}></td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+    refreshAccess();
+  }
+
+  const accountLabel = a => [a.prenom, a.nom].filter(Boolean).join(' ') || a.email;
+
+  $('staPublique').addEventListener('change', refreshAccess);
+  root.querySelectorAll('input[name="staMeteo"], input[name="staIrrigation"]').forEach(r => r.addEventListener('change', refreshAccess));
+  $('staAccountSearch').addEventListener('input', renderAccessAccounts);
+  $('staAccountList').addEventListener('change', event => {
+    const input = event.target.closest('input[data-kind]');
+    if (!input) return;
+    const id = input.closest('tr').dataset.user;
+    const g = { meteo: false, irrigation: false, ...(access.grants.get(id) || {}) };
+    g[input.dataset.kind] = input.checked;
+    access.grants.set(id, g);
+  });
+
+  async function saveAccess(stationId) {
+    if (!access.supported || access.loadError) return;
+    const rows = [...access.grants].map(([user_id, g]) => ({ station_id: stationId, user_id, meteo: Boolean(g.meteo), irrigation: Boolean(g.irrigation), updated_at: new Date().toISOString() }));
+    const keep = rows.filter(r => r.meteo || r.irrigation);
+    const drop = rows.filter(r => !r.meteo && !r.irrigation).map(r => r.user_id);
+    if (keep.length) {
+      const { error } = await supabase.from('station_acces').upsert(keep, { onConflict: 'station_id,user_id' });
+      if (error) throw error;
+    }
+    if (drop.length) {
+      const { error } = await supabase.from('station_acces').delete().eq('station_id', stationId).in('user_id', drop);
+      if (error) throw error;
+    }
+  }
+
   $('staForm').addEventListener('submit', async event => {
     event.preventDefault();
     const id = $('staId').value.trim();
@@ -702,6 +834,7 @@ export async function mount(root, ctx) {
       installee: $('staInstallee').checked,
       active: $('staActive').checked,
       publique: $('staPublique').checked,
+      ...(access.supported ? { acces_meteo: radio('staMeteo'), acces_irrigation: radio('staIrrigation') } : {}),
       commentaire: $('staCommentaire').value.trim() || null,
       updated_at: new Date().toISOString()
     };
@@ -712,6 +845,7 @@ export async function mount(root, ctx) {
         ? await supabase.from('stations').update(row).eq('id', editing.id)
         : await supabase.from('stations').insert({ id, reseau: 'SAM', ...row });
       if (error) throw error;
+      await saveAccess(editing ? editing.id : id);
       $('staDialog').close();
       ctx.ui.toast(editing ? 'Station mise à jour.' : `Station créée${row.active ? ' : la collecte démarrera dans les 30 minutes.' : '.'}`, 5000);
       await loadStations(true);
@@ -726,9 +860,11 @@ export async function mount(root, ctx) {
   // Capteurs
   // ---------------------------------------------------------------------------
   async function loadDictionary() {
-    const { data, error } = await supabase.from('station_capteurs').select('code,libelle,unite,ordre').order('ordre');
+    // « categorie » (météo / irrigation) existe une fois acces_stations.sql exécuté.
+    const { data, error } = await supabase.from('station_capteurs').select('*').order('ordre');
     if (error) throw error;
     state.dictionary = data || [];
+    state.hasCategory = state.dictionary.some(d => 'categorie' in d);
   }
   const sensorInfo = code => state.dictionary.find(d => d.code === code) || { code, libelle: code, unite: '', ordre: 999 };
   const sensorLabel = code => { const d = sensorInfo(code); return d.libelle && d.libelle !== code ? d.libelle : code; };
@@ -894,12 +1030,16 @@ export async function mount(root, ctx) {
     rows.sort((a, b) => (a.ordre - b.ordre) || a.code.localeCompare(b.code));
     $('capDictionary').innerHTML = `
       <table class="adm-table is-dictionary">
-        <thead><tr><th>Code</th><th>Libellé</th><th>Unité</th><th>Ordre</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th>Code</th><th>Libellé</th><th>Unité</th><th>Ordre</th>${state.hasCategory ? '<th>Données</th>' : ''}<th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody>${rows.map(r => `<tr data-code="${escapeHtml(r.code)}">
           <td data-label="Code"><code>${escapeHtml(r.code)}</code>${r.missing ? '<span class="adm-badge is-warn">non décrit</span>' : ''}</td>
           <td data-label="Libellé"><input class="adm-input" data-f="libelle" value="${escapeHtml(r.libelle || '')}" placeholder="Nom affiché"></td>
           <td data-label="Unité"><input class="adm-input is-short" data-f="unite" value="${escapeHtml(r.unite || '')}"></td>
           <td data-label="Ordre"><input class="adm-input is-short" data-f="ordre" inputmode="numeric" value="${escapeHtml(String(r.ordre ?? 100))}"></td>
+          ${state.hasCategory ? `<td data-label="Données"><select class="adm-input" data-f="categorie" title="Famille de données : règle qui peut voir ce capteur (fiche station)">
+            <option value="meteo"${r.categorie === 'meteo' ? ' selected' : ''}>Météo</option>
+            <option value="irrigation"${r.categorie !== 'meteo' ? ' selected' : ''}>Irrigation</option>
+          </select></td>` : ''}
           <td class="adm-cell-actions"><button type="button" class="adm-button is-small" data-save>Enregistrer</button></td>
         </tr>`).join('')}</tbody>
       </table>`;
@@ -914,7 +1054,9 @@ export async function mount(root, ctx) {
     if (!libelle) { ctx.ui.toast('Indiquez un libellé.'); return; }
     const ordre = Number.parseInt(field('ordre'), 10);
     button.disabled = true;
-    const { error } = await supabase.from('station_capteurs').upsert({ code: tr.dataset.code, libelle, unite: field('unite') || null, ordre: Number.isFinite(ordre) ? ordre : 100 }, { onConflict: 'code' });
+    const row = { code: tr.dataset.code, libelle, unite: field('unite') || null, ordre: Number.isFinite(ordre) ? ordre : 100 };
+    if (state.hasCategory) row.categorie = field('categorie');
+    const { error } = await supabase.from('station_capteurs').upsert(row, { onConflict: 'code' });
     button.disabled = false;
     if (error) { ctx.ui.toast(`Enregistrement impossible : ${error.message}`, 6000); return; }
     ctx.ui.toast('Libellé enregistré.');
