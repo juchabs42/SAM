@@ -10,7 +10,7 @@ Application unique qui regroupe les six outils SAM et les données des stations 
 | Indicateurs agroclimatiques | Open-Meteo | lecture |
 | Programmation irrigation | Open-Meteo | lecture |
 | Bilan hydrique | Open-Meteo + parcelles | parcelles du compte (privées) |
-| Pilotage irrigation (FAO-56 Rev.1 2025, aperçu) | Open-Meteo + stations SAM + parcelles | administrateurs uniquement pendant la validation ; parcelles du compte (privées) |
+| Bilan irrigation (aperçu, remplacera Bilan hydrique) | Open-Meteo + stations SAM + parcelles | équipe SAM pendant la validation ; parcelles du compte (privées) |
 | Suivi phénologique | Supabase + Open-Meteo | lecture, saisie admin et full admin |
 | Tavelure | Supabase | lecture, saisie admin et full admin |
 | Piégeage | Supabase | lecture, saisie admin et full admin |
@@ -34,7 +34,7 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
 
 1. **SQL Editor** : coller et exécuter `supabase/schema.sql`, `supabase/stations.sql`
    puis `supabase/connexion_comptes.sql` (lecture réservée aux comptes, profils, RIMpro),
-   puis `supabase/pilotage.sql` (parcelles du Pilotage irrigation ; tant qu'il n'est pas exécuté,
+   puis `supabase/pilotage.sql` (parcelles du Bilan irrigation ; tant qu'il n'est pas exécuté,
    l'outil garde les parcelles sur l'appareil et l'indique à l'écran),
    puis `supabase/roles.sql` (trois rôles : normal, admin, full admin).
 2. **Authentication → Sign In / Providers** : désactiver *Allow new users to sign up*.
@@ -81,7 +81,7 @@ css/app.css           styles du cadre
 css/tools/*.css       styles de chaque outil (limités à leur conteneur)
 js/core/*.js          connexion, profil, stations, lieux, période, navigation
 js/tools/*.js         un module par outil
-js/fao56/             moteur FAO-56 Rev.1 (2025) du Pilotage irrigation : ET₀, coefficients, bilan, conseil
+js/fao56/             moteur du Bilan irrigation (méthode FAO-56, 2025) : ET₀, coefficients, bilan, apports
 js/fao56/data/        tables FAO-56 2025 (cultures, sols, systèmes d'irrigation, paillages) avec leurs sources
 tests/fao56/          tests du moteur sur les exemples chiffrés de FAO-56 (node --test "tests/fao56/*.test.mjs")
 supabase/*.sql        tables, droits et règles d'accès, collecte des stations, imports
@@ -114,23 +114,27 @@ actuel du domaine, publier les outils sur un sous-domaine, par exemple `outils.s
 
 Une fois le domaine actif : le mettre en *Site URL* et dans les *Redirect URLs* de Supabase.
 
-## Pilotage irrigation (FAO-56 Rev.1, 2025)
+## Bilan irrigation (méthode FAO-56, édition 2025)
 
-Outil en aperçu, visible des seuls administrateurs SAM (`preview: true` dans `js/core/shell.js`) ;
-il remplacera « Bilan hydrique » et « Programmation irrigation » après validation (les parcelles
-du Bilan hydrique se reprennent depuis l'outil : bouton « Reprendre mes parcelles »).
+Outil en aperçu, visible de l'équipe SAM (`preview: true` dans `js/core/shell.js`). Il remplace
+« Bilan hydrique » : pour un compte qui voit le Bilan irrigation, l'ancien outil est masqué
+(`replacedBy`) et ses anciens liens mènent au nouveau. Pour l'ouvrir à tous, retirer `preview` :
+l'ancien Bilan hydrique disparaît alors pour tout le monde. Les parcelles de l'ancien outil se
+reprennent depuis le nouveau (bouton « Reprendre mes parcelles de l'ancien Bilan hydrique »).
 
-- **Référence unique** : FAO (2025), *Crop evapotranspiration*, Irrigation and Drainage Paper 56 Rev.1,
-  https://doi.org/10.4060/cd6621en. Chaque coefficient affiché indique son tableau et sa page.
-- **ET₀** : Penman-Monteith FAO (Éq. 2.4) recalculée à partir des données horaires Open-Meteo
-  (réanalyse ERA5 jusqu'à J−8, prévision ensuite) ; une station SAM associée à la parcelle remplace
-  températures, humidité et pluie (vent et rayonnement restent Open-Meteo).
-- **Bilan** : coefficients doubles Kcb + Ke avec couche de surface (chap. 7), ajustement climatique
-  (Éq. 7.2), approche A&P à partir de la couverture mesurée (chap. 9), zone racinaire et stress Ks
-  (chap. 8), paillages (chap. 10). Méthode Kc simple en option.
-- **Conseil** : irrigations planifiées d'aujourd'hui à J+7 (dose nette et brute, m³/ha, durée de
-  poste), pendant la saison de culture uniquement.
-- **Catalogue** : 76 cultures, 184 classes (arboriculture, vigne, maraîchage, grandes cultures,
+- **Vocabulaire** : l'outil présente des estimations calculées (« apport calculé », « seuil
+  d'irrigation atteint »), sans aucune recommandation, et rappelle que la décision d'irriguer
+  revient à l'exploitant. Termes en langage courant ; réglages techniques repliés.
+- **Méthode** : FAO (2025), *Crop evapotranspiration*, Irrigation and Drainage Paper 56 Rev.1,
+  https://doi.org/10.4060/cd6621en. ET₀ Penman-Monteith recalculée à partir des données horaires
+  Open-Meteo (réanalyse ERA5 jusqu'à J−8, prévision ensuite) ; une station SAM associée à la
+  parcelle remplace températures, humidité et pluie. Bilan : coefficients de transpiration et
+  évaporation du sol séparés, ajustement au climat, coefficient d'après la couverture mesurée,
+  réserve utile et stress, paillages ; méthode simplifiée (Kc unique) en option.
+- **Apports calculés** d'aujourd'hui à J+7 (mm, m³/ha, durée de poste), pendant la saison de
+  culture uniquement. Irrigations saisies à la main ou importées d'un fichier Excel (colonnes
+  Date et Apport).
+- **Catalogue** : 76 espèces, 184 conduites (arboriculture, vigne, maraîchage, grandes cultures,
   prairies), généré depuis le PDF FAO ; à ne pas modifier à la main (`js/fao56/data/cultures-2025.js`).
-- **Valeurs de terrain hors FAO-56**, signalées dans l'outil : profondeur racinaire des ligneux
-  (0,8 m par défaut), efficience d'application, dates de stades proposées, volume racinaire humecté.
+- **Valeurs par défaut hors méthode FAO**, signalées dans l'outil : profondeur d'enracinement des
+  ligneux (0,8 m), efficience du réseau, dates de saison proposées, volume de sol humecté.

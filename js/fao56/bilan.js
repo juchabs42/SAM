@@ -1,5 +1,5 @@
 // Moteur FAO-56 — bilan hydrique journalier de la couche évaporante et de la zone racinaire,
-// avec planification des irrigations sur la période de prévision (J à J+7).
+// avec calcul des apports d'irrigation sur la période de prévision (J à J+7).
 //
 // Référence : FAO-56 Rev.1 (2025), chapitres 6, 7 et 8. Convention de l'exemple 8.3 :
 // pluies et irrigations ont lieu en début de journée.
@@ -17,12 +17,12 @@ export const OPTIONS_DEFAUT = {
   ajusterP: true,           // p ajusté à l'ETc du jour (Éq. 8.5)
   ajusterClimat: true,      // ajustement de Kcb mid / end au climat (Éq. 7.2)
   pluiePrevue: 0.5,         // part de la pluie prévue retenue pour la planification
-  planifier: true,          // propose des irrigations sur la période de prévision
+  planifier: true,          // calcule des apports sur la période de prévision
   mad: null,                // seuil de déclenchement (fraction de TAW) ; null = p du jour (RAW)
   cible: 1,                 // fraction du déficit à recompléter (1 = retour à la capacité au champ)
   doseMaxNette: null,       // dose nette maximale par irrigation (mm), capacité du réseau
   intervalleMin: 1,         // jours minimum entre deux irrigations planifiées
-  planifierHorsSaison: false, // pas de conseil d'irrigation hors de la période de culture
+  planifierHorsSaison: false, // pas d'apport calculé hors de la période de culture
   seuilPluieSignificative: 3 // mm : au-delà, fw = 1 (tableau 7.6)
 };
 
@@ -239,7 +239,7 @@ export function simuler(parcelle, meteo, irrigations = [], options = {}, aujourd
 }
 
 /**
- * Synthèse pour le conseil : état du jour, irrigations planifiées sur J..J+n, bilans.
+ * Synthèse : état du jour, apports calculés sur J..J+n, bilans.
  */
 export function synthese(resultat, aujourdhui, horizon = 7) {
   const { jours } = resultat;
@@ -250,7 +250,7 @@ export function synthese(resultat, aujourdhui, horizon = 7) {
   const planifiees = fenetre.filter(j => j.planifiee).map(j => ({ date: j.date, net: j.planifiee.net, brut: j.planifiee.brut }));
   const somme = (arr, k) => arr.reduce((s, j) => s + (j[k] || 0), 0);
   const drAvant = idx > 0 ? jours[idx - 1].dr : (jour?.drDebut ?? 0);
-  // État du jour avant toute irrigation conseillée (Éq. 8.6 avec Dr de la veille)
+  // État du jour avant tout apport calculé (Éq. 8.6 avec Dr de la veille)
   const ksAvant = jour ? C.ksCalc(Math.min(drAvant, jour.taw), jour.taw, jour.p) : null;
   const saisonJours = fenetre.filter(j => j.stade !== 'hors');
   return {

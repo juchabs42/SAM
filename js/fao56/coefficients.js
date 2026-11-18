@@ -52,7 +52,7 @@ export function fcDepuisKcb(kcb, kcMaxV, h, kcMin = KC_MIN) {
 }
 
 /**
- * Fraction de sol exposée et humectée few — Éq. 7.7. En goutte-à-goutte, la FAO conseille
+ * Fraction de sol exposée et humectée few — Éq. 7.7. En goutte-à-goutte, la FAO recommande
  * de multiplier fw par [1 − (2/3) fc] (l'humectation se fait surtout sous la végétation).
  */
 export function fewCalc(fc, fw, goutteAGoutte = false) {

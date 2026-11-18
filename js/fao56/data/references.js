@@ -8,15 +8,15 @@ const S = (t, p) => `FAO-56 Rev.1 (2025), tableau ${t}, p. ${p}`;
  * Valeurs par défaut = milieu des fourchettes ; θ en m³ m⁻³, REW et TEW (Ze = 0,10 m) en mm.
  */
 export const SOLS = [
-  { id: 'sand', nom: 'Sable', nom_en: 'Sand', fc: [0.07, 0.17], wp: [0.02, 0.07], rew: [2, 7], tew: [6, 12] },
-  { id: 'loamy-sand', nom: 'Sable loameux', nom_en: 'Loamy sand', fc: [0.11, 0.19], wp: [0.03, 0.10], rew: [4, 8], tew: [9, 14] },
-  { id: 'sandy-loam', nom: 'Loam sableux', nom_en: 'Sandy loam', fc: [0.18, 0.28], wp: [0.06, 0.16], rew: [6, 10], tew: [15, 20] },
-  { id: 'loam', nom: 'Loam (terre franche)', nom_en: 'Loam', fc: [0.20, 0.30], wp: [0.07, 0.17], rew: [8, 10], tew: [16, 22] },
-  { id: 'silt-loam', nom: 'Loam limoneux', nom_en: 'Silt loam', fc: [0.22, 0.36], wp: [0.09, 0.21], rew: [8, 11], tew: [18, 25] },
-  { id: 'silt', nom: 'Limon', nom_en: 'Silt', fc: [0.28, 0.36], wp: [0.12, 0.22], rew: [8, 11], tew: [22, 26] },
-  { id: 'silty-clay-loam', nom: 'Loam argilo-limoneux', nom_en: 'Silt clay loam', fc: [0.30, 0.37], wp: [0.17, 0.24], rew: [8, 11], tew: [22, 27] },
-  { id: 'silty-clay', nom: 'Argile limoneuse', nom_en: 'Silty clay', fc: [0.30, 0.42], wp: [0.17, 0.29], rew: [8, 12], tew: [22, 28] },
-  { id: 'clay', nom: 'Argile', nom_en: 'Clay', fc: [0.32, 0.40], wp: [0.20, 0.24], rew: [8, 12], tew: [22, 29] }
+  { id: 'sand', nom: 'Sableux', nom_en: 'Sand', fc: [0.07, 0.17], wp: [0.02, 0.07], rew: [2, 7], tew: [6, 12] },
+  { id: 'loamy-sand', nom: 'Sablo-limoneux', nom_en: 'Loamy sand', fc: [0.11, 0.19], wp: [0.03, 0.10], rew: [4, 8], tew: [9, 14] },
+  { id: 'sandy-loam', nom: 'Limono-sableux', nom_en: 'Sandy loam', fc: [0.18, 0.28], wp: [0.06, 0.16], rew: [6, 10], tew: [15, 20] },
+  { id: 'loam', nom: 'Limoneux équilibré (terre franche)', nom_en: 'Loam', fc: [0.20, 0.30], wp: [0.07, 0.17], rew: [8, 10], tew: [16, 22] },
+  { id: 'silt-loam', nom: 'Limoneux fin', nom_en: 'Silt loam', fc: [0.22, 0.36], wp: [0.09, 0.21], rew: [8, 11], tew: [18, 25] },
+  { id: 'silt', nom: 'Limon très fin', nom_en: 'Silt', fc: [0.28, 0.36], wp: [0.12, 0.22], rew: [8, 11], tew: [22, 26] },
+  { id: 'silty-clay-loam', nom: 'Limono-argileux', nom_en: 'Silt clay loam', fc: [0.30, 0.37], wp: [0.17, 0.24], rew: [8, 11], tew: [22, 27] },
+  { id: 'silty-clay', nom: 'Argilo-limoneux', nom_en: 'Silty clay', fc: [0.30, 0.42], wp: [0.17, 0.29], rew: [8, 12], tew: [22, 28] },
+  { id: 'clay', nom: 'Argileux', nom_en: 'Clay', fc: [0.32, 0.40], wp: [0.20, 0.24], rew: [8, 12], tew: [22, 29] }
 ].map(s => ({
   ...s,
   thetaFC: +((s.fc[0] + s.fc[1]) / 2).toFixed(3),
@@ -25,11 +25,11 @@ export const SOLS = [
   src: S('7.5', 232)
 }));
 
-/** Classes du triangle USDA absentes du tableau 7.5 : on reprend la classe voisine (signalé). */
+/** Classes du triangle USDA absentes des sols types : on reprend la classe voisine (signalé). */
 export const SOLS_VOISINS = {
-  'sandy-clay-loam': { id: 'sandy-loam', note: 'Loam argilo-sableux : absent du tableau 7.5, valeurs du loam sableux' },
-  'clay-loam': { id: 'silty-clay-loam', note: 'Loam argileux : absent du tableau 7.5, valeurs du loam argilo-limoneux' },
-  'sandy-clay': { id: 'clay', note: 'Argile sableuse : absente du tableau 7.5, valeurs de l’argile' }
+  'sandy-clay-loam': { id: 'sandy-loam', nom: 'Limono-argilo-sableux', note: 'Limono-argilo-sableux : valeurs du sol limono-sableux' },
+  'clay-loam': { id: 'silty-clay-loam', nom: 'Limon argileux', note: 'Limon argileux : valeurs du sol limono-argileux' },
+  'sandy-clay': { id: 'clay', nom: 'Argilo-sableux', note: 'Argilo-sableux : valeurs du sol argileux' }
 };
 
 export const solParId = id => SOLS.find(s => s.id === id) || (SOLS_VOISINS[id] ? SOLS.find(s => s.id === SOLS_VOISINS[id].id) : null);
@@ -43,11 +43,11 @@ export const solParId = id => SOLS.find(s => s.id === id) || (SOLS_VOISINS[id] ?
 export const SYSTEMES = [
   { id: 'goutte-a-goutte', nom: 'Goutte-à-goutte', fw: [0.3, 0.4], fwDefaut: 0.35, goutte: true, efficience: 0.9, frequent: true },
   { id: 'micro-aspersion', nom: 'Micro-aspersion (vergers)', fw: [0.5, 0.8], fwDefaut: 0.65, efficience: 0.85, frequent: true },
-  { id: 'aspersion-verger', nom: 'Aspersion sous frondaison (vergers)', fw: [0.7, 1.0], fwDefaut: 0.85, efficience: 0.75 },
+  { id: 'aspersion-verger', nom: 'Aspersion sous les arbres (vergers)', fw: [0.7, 1.0], fwDefaut: 0.85, efficience: 0.75 },
   { id: 'aspersion', nom: 'Aspersion (grandes cultures, maraîchage)', fw: [1, 1], fwDefaut: 1, efficience: 0.75 },
   { id: 'pivot', nom: 'Pivot / rampe', fw: [1, 1], fwDefaut: 1, efficience: 0.8 },
-  { id: 'raie-etroite', nom: 'À la raie, toutes les raies, planche étroite', fw: [0.6, 1.0], fwDefaut: 0.8, efficience: 0.6 },
-  { id: 'raie-large', nom: 'À la raie, toutes les raies, planche large', fw: [0.4, 0.6], fwDefaut: 0.5, efficience: 0.6 },
+  { id: 'raie-etroite', nom: 'À la raie, toutes les raies (planches étroites)', fw: [0.6, 1.0], fwDefaut: 0.8, efficience: 0.6 },
+  { id: 'raie-large', nom: 'À la raie, toutes les raies (planches larges)', fw: [0.4, 0.6], fwDefaut: 0.5, efficience: 0.6 },
   { id: 'raie-alternee', nom: 'À la raie, une raie sur deux', fw: [0.3, 0.5], fwDefaut: 0.4, efficience: 0.6 },
   { id: 'submersion', nom: 'Submersion / calant', fw: [1, 1], fwDefaut: 1, efficience: 0.6 }
 ].map(s => ({ ...s, src: S('7.6', 236), srcEfficience: 'Valeur indicative (définition : Manuel FAO n° 5, annexe 4)' }));
@@ -110,5 +110,5 @@ export const DEFAUTS_TERRAIN = {
   zrLigneux: { valeur: 0.8, note: 'Profondeur racinaire des ligneux non tabulée (tableau 6.3) : 0,8 m par défaut, à ajuster (fosse, sondes).' },
   zrMinAnnuel: { valeur: 0.2, note: 'Profondeur racinaire au semis/plantation (0,15–0,20 m).' },
   fractionHumectee: { valeur: 1, note: 'Fraction du volume racinaire humecté (irrigation localisée). 1 = méthode FAO (pas de réduction).' },
-  pluiePrevue: { valeur: 0.5, note: 'Part de la pluie prévue prise en compte dans le conseil (prévision incertaine).' }
+  pluiePrevue: { valeur: 0.5, note: 'Part de la pluie prévue prise en compte dans le calcul des apports (prévision incertaine).' }
 };

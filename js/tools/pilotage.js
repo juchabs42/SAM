@@ -1,14 +1,15 @@
-// SAM Pilotage irrigation — conseil d'irrigation multi-cultures fondé sur FAO-56 Rev.1 (2025).
+// SAM Bilan irrigation — bilan hydrique multi-cultures (méthode FAO-56, édition 2025).
 //
-// Bilan hydrique journalier (Kcb + Ke, chap. 7 ; zone racinaire, chap. 8), ET₀ FAO
-// Penman-Monteith recalculée (Éq. 2.4), planification des irrigations sur J à J+7.
-// Outil en aperçu : visible des seuls administrateurs SAM tant qu'il n'est pas validé.
+// Calcule chaque jour l'eau disponible dans le sol et estime les apports d'irrigation des
+// 7 prochains jours. Les résultats sont des estimations de calcul : l'outil ne formule aucune
+// recommandation, la décision d'irriguer revient à l'exploitant.
+// Outil en aperçu : visible des seuls administrateurs SAM tant qu'il n'est pas ouvert à tous.
 
 import { storage, escapeHtml, todayISO, addDaysISO, formatNumber } from '../core/util.js';
 import { enableChartZoom } from '../core/charts.js';
 import { searchPlaces, locateMe } from '../core/places.js';
-import { CULTURES, FAMILLES, parId, source, REFERENCE } from '../fao56/data/cultures-2025.js';
-import { SOLS, SOLS_VOISINS, solParId, SYSTEMES, systemeParId, PAILLAGE_KC, PAILLAGE_ES, DEFAUTS_TERRAIN } from '../fao56/data/references.js';
+import { CULTURES, FAMILLES, parId } from '../fao56/data/cultures-2025.js';
+import { SOLS, SOLS_VOISINS, solParId, SYSTEMES, systemeParId, DEFAUTS_TERRAIN } from '../fao56/data/references.js';
 import * as C from '../fao56/coefficients.js';
 import { simuler, synthese, climatParStade } from '../fao56/bilan.js';
 import * as IR from '../fao56/irrigation.js';
@@ -34,8 +35,9 @@ const jourMois = iso => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
 const dateLongue = iso => new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 const dateCourte = iso => new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 const ecartJours = (a, b) => C.ecartJours(a, b);
+const pad2 = n => String(n).padStart(2, '0');
 
-/** Valeur représentative d'une plage FAO {min,max} / {max, op:'<'} / {min, op:'>'}. */
+/** Valeur représentative d'une plage {min,max} / {max, op:'<'} / {min, op:'>'}. */
 function milieu(r) {
   if (r == null) return null;
   if (typeof r === 'number') return r;
@@ -44,19 +46,20 @@ function milieu(r) {
   if (finite(r.min)) return r.op === '>' ? 1.1 * r.min : r.min;
   return null;
 }
-function plage(r, d = 2) {
+/** Plage en clair : « 3 à 4 », « moins de 0,5 », « plus de 2 ». */
+function plage(r, d = 1, facteur = 1) {
   if (r == null) return '—';
-  if (typeof r === 'number') return formatNumber(r, d);
-  if (r.text) return esc(r.text);
-  if (finite(r.min) && finite(r.max)) return r.min === r.max ? formatNumber(r.min, d) : `${formatNumber(r.min, d)} – ${formatNumber(r.max, d)}`;
-  if (finite(r.max)) return `${r.op || '≤'} ${formatNumber(r.max, d)}`;
-  if (finite(r.min)) return `${r.op || '≥'} ${formatNumber(r.min, d)}`;
+  const fmt = v => formatNumber(v * facteur, d);
+  if (typeof r === 'number') return fmt(r);
+  if (finite(r.min) && finite(r.max)) return r.min === r.max ? fmt(r.min) : `${fmt(r.min)} à ${fmt(r.max)}`;
+  if (finite(r.max)) return `moins de ${fmt(r.max)}`;
+  if (finite(r.min)) return `plus de ${fmt(r.min)}`;
   return '—';
 }
-const src = s => (s ? `<span class="pil-src" title="${esc(source(s))}">${esc(source(s).replace('FAO-56 Rev.1 (2025), ', ''))}</span>` : '');
+const niveauStress = ks => (!finite(ks) || ks >= 0.999 ? 'Aucun' : ks >= 0.75 ? 'Léger' : ks >= 0.4 ? 'Modéré' : 'Fort');
 
 // ---------------------------------------------------------------------------
-// Valeurs par défaut (hors FAO-56 : affichées comme indicatives)
+// Valeurs par défaut (indicatives, à ajuster)
 // ---------------------------------------------------------------------------
 const STADES_MODELES = {
   precoce: ['03-10', '04-05', '06-01', '08-31', '10-31'],
@@ -74,32 +77,30 @@ const GROUPE_STADES = {
 };
 const DUREES_ANNUELLES = [25, 35, 40, 20];
 const LIBELLES_STADES = {
-  annuel: ['Semis / plantation', 'Fin du stade initial (≈ 10 % de couverture)', 'Couverture maximale (fin du développement)', 'Début de la maturation / sénescence', 'Récolte (fin de saison)'],
-  perenne: ['Débourrement / reprise de végétation', 'Fin du stade initial', 'Frondaison complète (fin du développement)', 'Début de la sénescence (fin de mi-saison)', 'Chute des feuilles / fin de saison']
+  annuel: ['Semis ou plantation', 'Levée terminée', 'Végétation maximale', 'Début de la maturation', 'Récolte'],
+  perenne: ['Débourrement', 'Premières feuilles étalées', 'Feuillage complet', 'Début du jaunissement', 'Chute des feuilles']
 };
-const SALINITE = { S: 'sensible', MS: 'modérément sensible', MT: 'modérément tolérante', T: 'tolérante' };
-const NOMS_STADE = { hors: 'Hors saison', ini: 'Initial', dev: 'Développement', mi: 'Mi-saison', fin: 'Fin de saison' };
-const STRATEGIES = {
-  fao: 'FAO-56 : seuil = RFU (p × RU)',
-  confort: 'Confort : seuil = ½ RFU',
-  perso: 'Seuil personnalisé (% RU)'
+const NOMS_STADE = { hors: 'Hors saison', ini: 'Démarrage', dev: 'Croissance', mi: 'Pleine végétation', fin: 'Fin de saison' };
+const SEUILS = {
+  fao: 'Standard : quand la RFU est consommée',
+  confort: 'Confort : à la moitié de la RFU',
+  perso: 'Personnalisé (% de la RU consommée)'
 };
 
 const estAnnuel = cult => cult?.type === 'annuel';
 const classeDe = (cult, id) => cult?.classes.find(c => c.id === id) || cult?.classes[0] || null;
 const anneeDe = iso => Number(String(iso).slice(0, 4));
+const ruSol = s => (finite(s?.thetaFC) && finite(s?.thetaWP) ? 1000 * (s.thetaFC - s.thetaWP) : null);
+const nomSol = id => solParId(id) ? (SOLS_VOISINS[id]?.nom || solParId(id).nom) : '';
 
 function stadesModele(cult, annee) {
-  if (estAnnuel(cult)) {
-    const debut = `${annee}-04-15`;
-    return C.stadesDepuisDurees(debut, DUREES_ANNUELLES);
-  }
+  if (estAnnuel(cult)) return C.stadesDepuisDurees(`${annee}-04-15`, DUREES_ANNUELLES);
   const g = cult.type === 'perenne' ? 'prairie' : (GROUPE_STADES[cult.id] || 'tardif');
   const [a, b, c, d, e] = STADES_MODELES[g];
   return { debut: `${annee}-${a}`, finIni: `${annee}-${b}`, finDev: `${annee}-${c}`, finMi: `${annee}-${d}`, fin: `${annee}-${e}` };
 }
 
-/** Configuration par défaut d'une parcelle pour une culture et une classe. */
+/** Réglages par défaut d'une parcelle pour une espèce et une conduite. */
 function configDefaut(cult, cl, annee) {
   const annuel = estAnnuel(cult);
   const sys = systemeParId(annuel ? 'aspersion' : 'goutte-a-goutte');
@@ -107,7 +108,7 @@ function configDefaut(cult, cl, annee) {
   const stades = stadesModele(cult, annee);
   return {
     version: 1,
-    reference: 'FAO-56 Rev.1 (2025)',
+    reference: 'FAO-56 (2025)',
     methode: 'double',
     culture: defautsCulture(cult, cl),
     stades,
@@ -137,7 +138,7 @@ function defautsCulture(cult, cl) {
     ap: {
       actif: false,
       fc: +(milieu(apMid?.fc) ?? milieu(cl?.fc) ?? 0.5).toFixed(2),
-      forme: annuel ? 'rangs' : (/trellis|hedge|palissé|haie/i.test(`${cl?.nom_en} ${cl?.nom}`) ? 'rangs' : 'arbres'),
+      forme: annuel ? 'rangs' : (/trellis|hedge|palissé|haie|palissage/i.test(`${cl?.nom_en} ${cl?.nom}`) ? 'rangs' : 'arbres'),
       hauteurCanopee: +(h * 0.7).toFixed(2),
       largeur: 1.5,
       angleRang: 90,
@@ -153,7 +154,7 @@ function stadesPourAnnee(stades, annee, annuel) {
   if (annuel) return stades;
   const ref = anneeDe(stades.debut);
   const decale = iso => {
-    let y = anneeDe(iso) + (annee - ref);
+    const y = anneeDe(iso) + (annee - ref);
     let md = iso.slice(5);
     if (md === '02-29' && !((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0)) md = '02-28';
     return `${y}-${md}`;
@@ -171,16 +172,16 @@ function periodeBilan(p, annee, today) {
     return { debut, fin, enCours: fin >= today };
   }
   const md = /^\d{2}-\d{2}$/.test(cfg.debutBilan || '') ? cfg.debutBilan : '01-01';
-  // Début après le débourrement (ex. 1er octobre) : le bilan part de l'automne précédent.
+  // Début après le débourrement (ex. 1er octobre) : le calcul part de l'automne précédent.
   const debut = `${md > cfg.stades.debut.slice(5) ? annee - 1 : annee}-${md}`;
   const courante = annee === anneeDe(today);
   return { debut, fin: courante ? addDaysISO(today, 7) : `${annee}-12-31`, enCours: courante };
 }
 
 /**
- * Dose nette maximale d'une irrigation : valeur saisie, sinon, pour l'irrigation localisée,
- * capacité du poste (pluviométrie × durée maximale, 12 h par défaut × efficience) pour obtenir
- * un programme d'apports fréquents plutôt qu'un seul apport massif.
+ * Apport utile maximal d'une irrigation : valeur saisie, sinon, en irrigation localisée,
+ * capacité du poste (pluviométrie × durée maximale, 12 h par défaut × efficience), pour
+ * obtenir des apports fréquents plutôt qu'un seul apport massif.
  */
 function doseMax(irr, sys) {
   if (finite(irr.doseMaxNette) && irr.doseMaxNette > 0) return irr.doseMaxNette;
@@ -188,7 +189,7 @@ function doseMax(irr, sys) {
   return null;
 }
 
-/** Paramètres du moteur pour une parcelle, une campagne et la série météo chargée. */
+/** Paramètres du moteur pour une parcelle, une saison et la série météo chargée. */
 function versMoteur(p, annee, meteo) {
   const cult = parId(p.culture_id);
   const cl = classeDe(cult, p.classe_id);
@@ -249,7 +250,7 @@ function calculAP(cult, cu, stades, climat, latitude) {
   return { fcEff, kd, kcbFull, kcb, kh, J, date: milieuMi };
 }
 
-/** Complète une configuration enregistrée avec les clés ajoutées depuis (compatibilité). */
+/** Complète des réglages enregistrés avec les clés ajoutées depuis (compatibilité). */
 function normaliser(p) {
   const cult = parId(p.culture_id);
   if (!cult) return p;
@@ -273,36 +274,75 @@ function debutBilanAffiche(cfg) {
   return `${md > cfg.stades.debut.slice(5) ? a - 1 : a}-${md}`;
 }
 
+/** Description en clair d'une conduite : couverture du sol, hauteur, enracinement, coefficients. */
+function decrireConduite(cult, cl) {
+  const parts = [];
+  if (cl.fc) parts.push(`sol ombragé par la végétation : ${plage(cl.fc, 0, 100)} %`);
+  if (cl.h) parts.push(`hauteur : ${plage(cl.h)} m`);
+  if (cl.zr) parts.push(`enracinement : ${plage(cl.zr)} m`);
+  const k = cl.kc || { ini: cl.kcb.ini + 0.05, mid: cl.kcb.mid + 0.05, end: cl.kcb.end + 0.05 };
+  parts.push(`coefficient cultural (Kc) : ${f2(k.ini)} au démarrage, ${f2(k.mid)} en pleine végétation, ${f2(k.end)} en fin de saison`);
+  const txt = parts.join(' · ');
+  return txt.charAt(0).toUpperCase() + txt.slice(1);
+}
+
+/** Date réelle ? (refuse le 31/02, le 32/13…) */
+function dateValide(y, m, d) {
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return y > 1900 && y < 2200 && t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d ? `${y}-${pad2(m)}-${pad2(d)}` : null;
+}
+
+/** Date d'une cellule Excel (numéro de série, date ou texte jj/mm/aaaa) → AAAA-MM-JJ. */
+function dateExcel(value) {
+  if (typeof value === 'number' && window.XLSX?.SSF?.parse_date_code) {
+    const d = window.XLSX.SSF.parse_date_code(value);
+    return d ? dateValide(d.y, d.m, d.d) : null;
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    // Midi pour ne pas changer de jour à cause des décalages horaires
+    const t = new Date(value.getTime() + 12 * 3600e3);
+    return dateValide(t.getFullYear(), t.getMonth() + 1, t.getDate());
+  }
+  const t = String(value ?? '').trim();
+  if (!t) return null;
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return dateValide(+m[1], +m[2], +m[3]);
+  m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+  if (m) return dateValide(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[2], +m[1]);
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Montage
 // ---------------------------------------------------------------------------
 export async function mount(root, ctx) {
   ctx.filters({ location: false, period: false });
   if (!ctx.isAdmin) {
-    root.innerHTML = `<div class="pil"><div class="pil-card pil-vide"><h2>Pilotage irrigation</h2>
+    root.innerHTML = `<div class="pil"><div class="pil-card pil-vide"><h2>Bilan irrigation</h2>
       <p>Cet outil est en préparation et réservé pour l’instant à l’équipe SAM.</p></div></div>`;
     return {};
   }
   const today = todayISO();
   const store = creerStockage(ctx.supabase || null, storage);
   const S = {
-    parcelles: [], id: storage.get('pilotage.courante', null), onglet: storage.get('pilotage.onglet', 'conseil'),
+    parcelles: [], id: storage.get('pilotage.courante', null), onglet: storage.get('pilotage.onglet', 'bilan'),
     annee: anneeDe(today), calc: null, irrigations: [], pluies: [], charge: false, erreur: null, token: 0,
-    chart: null, toutVoir: false, brouillon: null, anciennes: null
+    chart: null, toutVoir: false, brouillon: null, anciennes: null, importLignes: null
   };
+  if (!['bilan', 'saisies', 'parcelle', 'aide'].includes(S.onglet)) S.onglet = 'bilan';
 
   root.innerHTML = `<div class="pil">
     <div class="pil-bar">
       <label class="pil-parcelle"><span>Parcelle</span><select id="pil-parcelle" class="sam-input"></select></label>
       <button type="button" class="sam-button" data-action="nouvelle">＋ Nouvelle parcelle</button>
-      <span class="pil-badge" title="${esc(REFERENCE)}">Aperçu équipe · FAO-56 Rev.1 (2025)</span>
+      <span class="pil-badge">Aperçu équipe</span>
     </div>
     <div id="pil-mode" class="pil-alerte hidden"></div>
     <nav class="pil-tabs" role="tablist">
-      <button type="button" role="tab" data-tab="conseil">Conseil</button>
+      <button type="button" role="tab" data-tab="bilan">Bilan</button>
       <button type="button" role="tab" data-tab="saisies">Irrigations et pluies</button>
       <button type="button" role="tab" data-tab="parcelle">Parcelle</button>
-      <button type="button" role="tab" data-tab="referentiel">Référentiel FAO</button>
+      <button type="button" role="tab" data-tab="aide">Aide</button>
     </nav>
     <section id="pil-panel" class="pil-panel"></section>
   </div>`;
@@ -328,6 +368,7 @@ export async function mount(root, ctx) {
     storage.set('pilotage.courante', id);
     S.calc = null;
     S.erreur = null;
+    S.importLignes = null;
     const p = courante();
     if (!p) { render(); return; }
     if (estAnnuel(parId(p.culture_id))) S.annee = anneeDe(p.config.stades.debut);
@@ -343,16 +384,16 @@ export async function mount(root, ctx) {
     const token = ++S.token;
     S.charge = true;
     S.erreur = null;
-    if (S.onglet === 'conseil') renderConseil();
+    if (S.onglet === 'bilan') renderBilan();
     try {
       const per = periodeBilan(p, S.annee, today);
-      if (per.debut > per.fin) throw new Error('La période du bilan est vide : vérifiez la date de début du bilan et les stades.');
+      if (per.debut > per.fin) throw new Error('La période de calcul est vide : vérifiez la date de début du calcul et les dates de la saison.');
       const place = { latitude: p.latitude, longitude: p.longitude, altitude: p.altitude };
       const met = await chargerMeteo(place, per.debut, per.fin, { client: ctx.supabase, stationId: p.station_id, aujourdhui: today, cache: storage });
       if (token !== S.token) return;
       if (!met.jours.length) throw new Error('Aucune donnée météo pour cette période.');
       const corrections = new Map(S.pluies.map(r => [r.jour, Number(r.pluie_mm)]));
-      const meteo = met.jours.map(j => (corrections.has(j.date) ? { ...j, pluieModele: j.pluie, pluie: corrections.get(j.date), origine: `${j.origine} + pluie saisie` } : j));
+      const meteo = met.jours.map(j => (corrections.has(j.date) ? { ...j, pluieModele: j.pluie, pluie: corrections.get(j.date), origine: `${j.origine} + pluie mesurée` } : j));
       const param = versMoteur(p, S.annee, meteo);
       const irrig = S.irrigations.map(r => ({ date: r.jour, brut: Number(r.dose_brute_mm) }));
       const res = simuler(param.moteur, meteo, irrig, { ...param.options, planifier: per.enCours }, per.enCours ? today : null);
@@ -365,7 +406,7 @@ export async function mount(root, ctx) {
     } finally {
       if (token === S.token) {
         S.charge = false;
-        if (S.onglet === 'conseil') renderConseil();
+        if (S.onglet === 'bilan') renderBilan();
       }
     }
   }
@@ -382,35 +423,35 @@ export async function mount(root, ctx) {
     const mode = $('#pil-mode');
     mode.classList.toggle('hidden', store.mode !== 'local');
     mode.innerHTML = store.mode === 'local'
-      ? `<strong>Mode local.</strong> ${esc(store.erreur || 'Connexion à la base indisponible.')} Les parcelles saisies ici ne sont visibles que sur cet appareil.`
+      ? '<strong>Mode local.</strong> Les tables de la base ne sont pas encore installées (script <code>supabase/pilotage.sql</code>). Les parcelles saisies ici restent sur cet appareil.'
       : '';
     if (S.chart) { S.chart.destroy(); S.chart = null; }
-    if (!courante() && S.onglet !== 'referentiel' && S.onglet !== 'parcelle') return renderVide();
+    if (!courante() && S.onglet !== 'aide' && S.onglet !== 'parcelle') return renderVide();
     switch (S.onglet) {
       case 'saisies': return renderSaisies();
       case 'parcelle': return renderParcelle();
-      case 'referentiel': return renderReferentiel();
-      default: return renderConseil();
+      case 'aide': return renderAide();
+      default: return renderBilan();
     }
   }
 
   function renderVide() {
     panel.innerHTML = `<div class="pil-card pil-vide">
-      <h2>Pilotage de l’irrigation selon FAO-56 (édition 2025)</h2>
-      <p>Créez une parcelle : culture et classe FAO, sol, système d’irrigation et dates des stades. L’outil calcule chaque jour le bilan hydrique et propose les irrigations des 7 prochains jours (dose en mm et en m³/ha, durée de poste).</p>
+      <h2>Bilan irrigation</h2>
+      <p>Créez une parcelle : espèce et conduite, sol, système d’irrigation et dates clés de la saison. L’outil calcule chaque jour l’eau disponible dans le sol et estime les apports d’irrigation des 7 prochains jours, en mm, en m³/ha et en durée de poste.</p>
       <div class="pil-actions">
         <button type="button" class="sam-button sam-button-primary" data-action="nouvelle">＋ Créer une parcelle</button>
-        <button type="button" class="sam-button" data-action="anciennes">Reprendre mes parcelles du Bilan hydrique</button>
+        <button type="button" class="sam-button" data-action="anciennes">Reprendre mes parcelles de l’ancien Bilan hydrique</button>
       </div>
       <div id="pil-anciennes"></div>
     </div>`;
   }
 
   // ---------------------------------------------------------------------------
-  // Onglet Conseil
+  // Onglet Bilan
   // ---------------------------------------------------------------------------
-  function renderConseil() {
-    if (S.onglet !== 'conseil') return;
+  function renderBilan() {
+    if (S.onglet !== 'bilan') return;
     if (S.chart) { S.chart.destroy(); S.chart = null; }
     const p = courante();
     if (!p) return renderVide();
@@ -418,10 +459,10 @@ export async function mount(root, ctx) {
     const annees = estAnnuel(cult) ? [anneeDe(p.config.stades.debut)] : [0, 1, 2, 3].map(k => anneeDe(today) - k);
     const entete = `<div class="pil-head">
       <div><h2>${esc(p.nom)}</h2><p class="pil-muted">${esc(cult?.nom ?? '')} · ${esc(classeDe(cult, p.classe_id)?.nom ?? '')}${p.lieu ? ` · ${esc(p.lieu)}` : ''}</p></div>
-      <label class="pil-inline">Campagne <select id="pil-annee" class="sam-input"${annees.length < 2 ? ' disabled' : ''}>${annees.map(a => `<option value="${a}"${a === S.annee ? ' selected' : ''}>${a}</option>`).join('')}</select></label>
+      <label class="pil-inline">Saison <select id="pil-annee" class="sam-input"${annees.length < 2 ? ' disabled' : ''}>${annees.map(a => `<option value="${a}"${a === S.annee ? ' selected' : ''}>${a}</option>`).join('')}</select></label>
     </div>`;
     if (S.charge && !S.calc) {
-      panel.innerHTML = `${entete}<div class="pil-card pil-attente"><span class="sam-spinner"></span> Calcul du bilan hydrique (données météo, ET₀ Penman-Monteith)…</div>`;
+      panel.innerHTML = `${entete}<div class="pil-card pil-attente"><span class="sam-spinner"></span> Calcul en cours (météo, évapotranspiration, réserve du sol)…</div>`;
       return;
     }
     if (S.erreur) {
@@ -432,11 +473,11 @@ export async function mount(root, ctx) {
     if (!S.calc) { panel.innerHTML = entete; return; }
     const { res, syn, per, param, met } = S.calc;
     panel.innerHTML = `${entete}
-      ${per.enCours ? renderReco(p, syn, res) : renderBilanSaison(p, res)}
+      ${per.enCours ? renderSituation(p, syn, res) : renderSaison(res)}
       <div class="pil-card">
-        <div class="pil-card-head"><h3>Réserve en eau du sol</h3><span class="pil-muted">${dateFr(per.debut)} → ${dateFr(per.fin)}${per.enCours ? ' · pointillés = prévision' : ''}</span></div>
-        <div class="pil-chart"><canvas id="pil-canvas" aria-label="Réserve en eau du sol"></canvas></div>
-        <p class="pil-note">Eau disponible = RU − épuisement (Dr). En dessous du seuil, la culture consomme la réserve difficilement utilisable : le stress commence (Ks &lt; 1, Éq. 8.6).</p>
+        <div class="pil-card-head"><h3>Eau disponible dans le sol</h3><span class="pil-muted">${dateFr(per.debut)} → ${dateFr(per.fin)}${per.enCours ? ' · pointillés : prévision' : ''}</span></div>
+        <div class="pil-chart"><canvas id="pil-canvas" aria-label="Eau disponible dans le sol"></canvas></div>
+        <p class="pil-note">La courbe rouge montre l’eau que les racines peuvent encore prélever. Sous la ligne orange (seuil d’irrigation), la culture puise dans la réserve la plus difficile à extraire et commence à manquer d’eau. À zéro, la réserve utile est vide.</p>
       </div>
       <details class="pil-card" id="pil-details">
         <summary>Détail jour par jour</summary>
@@ -445,12 +486,13 @@ export async function mount(root, ctx) {
           <button type="button" class="sam-button" data-action="csv">Exporter (CSV)</button>
         </div>
         <div class="pil-table-wrap">${tableJours(res.jours, S.toutVoir)}</div>
+        <p class="pil-note">ET₀ : évapotranspiration de référence. Kc : coefficient cultural (consommation de la culture ÷ ET₀). ETc : consommation d’eau de la culture. Eau disponible : ce qui reste dans la réserve utile (RU).</p>
       </details>
-      ${renderHypotheses(p, param, met, res)}`;
+      ${renderCalcul(p, param, met, res)}`;
     dessiner(res.jours, per.enCours ? today : null);
   }
 
-  function renderReco(p, syn, res) {
+  function renderSituation(p, syn, res) {
     const cfg = p.config;
     const irr = cfg.irrigation;
     const pluvio = irr.pluvio;
@@ -459,28 +501,34 @@ export async function mount(root, ctx) {
     const dispo = finite(ru) ? ru - syn.drDebut : null;
     const marge = finite(syn.seuil) && finite(syn.drDebut) ? syn.seuil - syn.drDebut : null;
     const atteint = finite(marge) && marge <= 0;
-    const ligneDose = (net, brut) => {
+    const avecPluvio = finite(pluvio) && pluvio > 0;
+    const ligneApport = (net, brut) => {
       const d = IR.decouperPostes(brut, pluvio, irr.dureeMaxPoste);
-      const duree = finite(pluvio) && pluvio > 0
-        ? (d.postes > 1 ? `${d.postes} postes de ${IR.formatDuree(d.dureeParPoste)}` : `durée ${IR.formatDuree(d.dureeTotale)}`)
-        : '<span class="pil-muted">durée : renseignez la pluviométrie</span>';
-      const vol = p.surface_ha ? ` · ${f0(IR.mmVersM3ha(brut) * p.surface_ha)} m³ sur ${f2(p.surface_ha)} ha` : '';
-      return `<b>${f1(brut)} mm</b> bruts · <b>${f0(IR.mmVersM3ha(brut))} m³/ha</b> · ${duree}${vol}<br><span class="pil-muted">dose nette ${f1(net)} mm, efficience ${pct(irr.efficience)}</span>`;
+      const duree = avecPluvio
+        ? (d.postes > 1 ? ` · ${d.postes} postes de ${IR.formatDuree(d.dureeParPoste)}` : ` · ${IR.formatDuree(d.dureeTotale)} de poste`)
+        : '';
+      const vol = p.surface_ha ? ` · ${f0(IR.mmVersM3ha(brut) * p.surface_ha)} m³ pour ${f2(p.surface_ha)} ha` : '';
+      return `<b>${f1(brut)} mm</b> (${f0(IR.mmVersM3ha(brut))} m³/ha)${duree}${vol}<br>
+        <span class="pil-muted">dont ${f1(net)} mm utiles aux racines (efficience du réseau ${pct(irr.efficience)})${avecPluvio ? '' : ' · renseignez la pluviométrie du réseau pour obtenir la durée de poste'}</span>`;
     };
     let principal;
     if (syn.horsSaison && !syn.planifiees.length) {
       const st = S.calc.param.stades;
       const avant = today < st.debut;
-      principal = `<p class="pil-reco-titre is-ok">Hors saison d’irrigation</p>
-        <p class="pil-reco-dose">${avant ? `La saison commence le ${esc(dateLongue(st.debut))} (${esc(LIBELLES_STADES[estAnnuel(parId(p.culture_id)) ? 'annuel' : 'perenne'][0].toLowerCase())}).` : `La saison s’est terminée le ${esc(dateLongue(st.fin))}.`} Le bilan continue de suivre la recharge du sol par les pluies.</p>`;
-    } else if (syn.planifiees.length) {
+      principal = `<p class="pil-titre is-ok">Hors saison d’irrigation</p>
+        <p class="pil-dose">${avant ? `La saison commence le ${esc(dateLongue(st.debut))}.` : `La saison s’est terminée le ${esc(dateLongue(st.fin))}.`} Le calcul continue de suivre la recharge du sol par les pluies.</p>`;
+    } else if (syn.planifiees.length || atteint) {
       const first = syn.planifiees[0];
-      const quand = first.date === today ? 'Irriguer aujourd’hui' : `Prochaine irrigation : ${dateLongue(first.date)}`;
-      principal = `<p class="pil-reco-titre is-irriguer">${esc(quand)}</p><p class="pil-reco-dose">${ligneDose(first.net, first.brut)}</p>`;
+      const titre = atteint ? 'Seuil d’irrigation atteint' : `Seuil d’irrigation atteint ${dateLongue(first.date)} (prévision)`;
+      const saisieJour = S.irrigations.filter(r => r.jour === today).reduce((a, r) => a + Number(r.dose_brute_mm || 0), 0);
+      const quand = !first ? '' : first.date === today ? 'Apport calculé pour aujourd’hui' : `Prochain apport calculé (${dateCourte(first.date)})`;
+      principal = `<p class="pil-titre is-seuil">${esc(titre)}</p>
+        ${saisieJour > 0 ? `<p class="pil-dose">Irrigation saisie aujourd’hui : ${f1(saisieJour)} mm.</p>` : ''}
+        ${first ? `<p class="pil-dose">${esc(quand)} : ${ligneApport(first.net, first.brut)}</p>` : ''}`;
     } else {
       const fin = res.jours.find(j => j.date === syn.horizon);
-      principal = `<p class="pil-reco-titre is-ok">Pas d’irrigation nécessaire${syn.horizon ? ` d’ici le ${esc(dateCourte(syn.horizon))}` : ''}</p>
-        <p class="pil-reco-dose">La réserve reste au-dessus du seuil${fin ? ` : ${f0(fin.taw - fin.dr)} mm disponibles prévus en fin de période` : ''}.</p>`;
+      principal = `<p class="pil-titre is-ok">Seuil d’irrigation non atteint${syn.horizon ? ` d’ici ${esc(dateLongue(syn.horizon))}` : ''}</p>
+        <p class="pil-dose">${fin ? `Il resterait ${f0(fin.taw - fin.dr)} mm d’eau disponible en fin de période.` : ''}</p>`;
     }
     // Apports identiques sur des jours consécutifs : une seule ligne « chaque jour du … au … »
     const groupes = [];
@@ -490,84 +538,91 @@ export async function mount(root, ctx) {
       else groupes.push({ debut: x.date, fin: x.date, brut: x.brut, n: 1 });
     }
     const liste = syn.planifiees.length > 1
-      ? `<ul class="pil-plan">${groupes.map(g => `<li><span>${g.n > 1 ? `Chaque jour du ${esc(dateCourte(g.debut))} au ${esc(dateCourte(g.fin))}` : esc(dateCourte(g.debut))}</span><span>${f1(g.brut)} mm bruts · ${f0(IR.mmVersM3ha(g.brut))} m³/ha${finite(pluvio) && pluvio > 0 ? ` · ${IR.formatDuree(g.brut / pluvio)}` : ''}</span></li>`).join('')}</ul>`
+      ? `<p class="pil-sous-titre">Apports calculés sur la période :</p><ul class="pil-plan">${groupes.map(g => `<li><span>${g.n > 1 ? `Chaque jour du ${esc(dateCourte(g.debut))} au ${esc(dateCourte(g.fin))}` : esc(dateCourte(g.debut))}</span><span>${f1(g.brut)} mm · ${f0(IR.mmVersM3ha(g.brut))} m³/ha${avecPluvio ? ` · ${IR.formatDuree(g.brut / pluvio)}` : ''}</span></li>`).join('')}</ul>`
       : '';
-    const besoin7 = syn.besoinBrut;
-    const frequent = sys?.frequent && besoin7 > 0;
-    const quotidien = frequent
-      ? `<p class="pil-muted">En apport quotidien (${esc(sys.nom.toLowerCase())}) : ${f1(besoin7 / 8)} mm bruts par jour${finite(pluvio) && pluvio > 0 ? `, soit ${IR.formatDuree(besoin7 / 8 / pluvio)} par jour` : ''}, sur les 8 jours d’aujourd’hui à J+7.</p>`
+    const total = syn.besoinBrut;
+    const quotidien = sys?.frequent && total > 0
+      ? `<p class="pil-muted">Réparti sur les 8 jours : ${f1(total / 8)} mm par jour${avecPluvio ? `, soit ${IR.formatDuree(total / 8 / pluvio)} de poste par jour` : ''}.</p>`
       : '';
     const pluieTxt = syn.pluiePrevue > 0.2
-      ? `Pluie prévue : ${f1(syn.pluiePrevue)} mm, dont ${f1(syn.pluieRetenue)} mm retenus (${pct(cfg.strategie?.pluiePrevue ?? 0.5)}).`
-      : 'Pas de pluie significative prévue.';
+      ? `Pluie prévue : ${f1(syn.pluiePrevue)} mm, dont ${f1(syn.pluieRetenue)} mm comptés (${pct(cfg.strategie?.pluiePrevue ?? 0.5)}).`
+      : 'Pas de pluie notable prévue.';
     const ks = syn.ksAvant;
+    const stress = niveauStress(ks);
     return `<div class="pil-grid">
-      <div class="pil-card pil-reco">
-        <p class="pil-kicker">Conseil du ${esc(dateLongue(today))}</p>
+      <div class="pil-card pil-situation">
+        <p class="pil-kicker">Situation au ${esc(dateLongue(today))}</p>
         ${principal}
         ${liste}
-        <p>Sur 8 jours (aujourd’hui à J+7) : <b>${f1(besoin7)} mm bruts</b> (${f0(IR.mmVersM3ha(besoin7))} m³/ha) pour une ETc prévue de ${f1(syn.etcPrevue)} mm. ${esc(pluieTxt)}</p>
+        <p>Sur 8 jours (aujourd’hui à J+7) : <b>${f1(total)} mm</b> d’apports calculés (${f0(IR.mmVersM3ha(total))} m³/ha), pour une consommation de la culture de ${f1(syn.etcPrevue)} mm. ${esc(pluieTxt)}</p>
         ${quotidien}
+        <p class="pil-avert">Estimation calculée à partir de la météo et des réglages de la parcelle, à confronter à l’observation de la culture et aux mesures de terrain (sondes, tensiomètres). La décision d’irriguer revient à l’exploitant.</p>
         <div class="pil-actions pil-actions-tight"><button type="button" class="sam-button" data-tab-go="saisies">Saisir une irrigation</button></div>
       </div>
       <div class="pil-kpis">
-        <div class="pil-kpi"><span>Eau disponible</span><b>${f0(dispo)} mm</b><small>${pct(syn.fractionRU)} de la RU (${f0(ru)} mm)</small></div>
-        <div class="pil-kpi ${atteint ? 'is-alerte' : ''}"><span>Avant le seuil</span><b>${atteint ? 'Seuil atteint' : `${f0(marge)} mm`}</b><small>seuil : ${f0(syn.seuil)} mm consommés</small></div>
-        <div class="pil-kpi ${ks < 0.999 ? 'is-alerte' : ''}"><span>Confort hydrique</span><b>${ks < 0.999 ? `Stress (Ks ${f2(ks)})` : 'Sans stress'}</b><small>${syn.joursStress7 ? `${syn.joursStress7} j de stress sur 7` : 'aucun stress sur 7 jours'}</small></div>
-        <div class="pil-kpi"><span>ETc 7 derniers jours</span><b>${f1(syn.etcPasse7)} mm</b><small>pluie ${f1(syn.pluiePasse7)} mm · irrigation ${f1(syn.irrigationPasse7)} mm</small></div>
+        <div class="pil-kpi"><span>Eau disponible dans le sol</span><b>${f0(dispo)} mm</b><small>${pct(syn.fractionRU)} de la réserve utile (RU : ${f0(ru)} mm)</small></div>
+        <div class="pil-kpi ${atteint ? 'is-alerte' : ''}"><span>Marge avant le seuil d’irrigation</span><b>${atteint ? 'Seuil atteint' : `${f0(marge)} mm`}</b><small>le seuil est atteint quand il ne reste que ${f0(ru - syn.seuil)} mm</small></div>
+        <div class="pil-kpi ${stress !== 'Aucun' ? 'is-alerte' : ''}"><span>Stress hydrique</span><b>${stress}</b><small>${stress !== 'Aucun' ? `transpiration réduite de ${f0((1 - ks) * 100)} % · ` : ''}${syn.joursStress7 ? `${syn.joursStress7} j de stress sur les 7 derniers` : 'aucun stress sur les 7 derniers jours'}</small></div>
+        <div class="pil-kpi"><span>Consommation de la culture (7 derniers jours)</span><b>${f1(syn.etcPasse7)} mm</b><small>pluie ${f1(syn.pluiePasse7)} mm · irrigation ${f1(syn.irrigationPasse7)} mm</small></div>
       </div>
     </div>`;
   }
 
-  function renderBilanSaison(p, res) {
+  function renderSaison(res) {
     const j = res.jours.filter(x => x.stade !== 'hors');
     const s = (arr, k) => arr.reduce((a, x) => a + (x[k] || 0), 0);
     const all = res.jours;
-    return `<div class="pil-card"><h3>Bilan de la campagne</h3>
+    return `<div class="pil-card"><h3>Bilan de la saison ${S.annee}</h3>
       <div class="pil-kpis pil-kpis-row">
-        <div class="pil-kpi"><span>ET₀</span><b>${f0(s(all, 'et0'))} mm</b><small>sur la période</small></div>
-        <div class="pil-kpi"><span>ETc réelle (saison)</span><b>${f0(s(j, 'etcAct'))} mm</b><small>potentielle ${f0(s(j, 'etcPot'))} mm</small></div>
-        <div class="pil-kpi"><span>Pluie</span><b>${f0(s(all, 'pluie'))} mm</b><small>percolation ${f0(s(all, 'dp'))} mm</small></div>
+        <div class="pil-kpi"><span>ET₀ (évapotranspiration de référence)</span><b>${f0(s(all, 'et0'))} mm</b><small>sur la période</small></div>
+        <div class="pil-kpi"><span>Consommation de la culture</span><b>${f0(s(j, 'etcAct'))} mm</b><small>${f0(s(j, 'etcPot'))} mm sans manque d’eau</small></div>
+        <div class="pil-kpi"><span>Pluie</span><b>${f0(s(all, 'pluie'))} mm</b><small>dont ${f0(s(all, 'dp'))} mm partis en profondeur</small></div>
         <div class="pil-kpi"><span>Irrigation saisie</span><b>${f0(s(all, 'irrigationBrute'))} mm</b><small>${f0(IR.mmVersM3ha(s(all, 'irrigationBrute')))} m³/ha · ${all.filter(x => x.stress && x.stade !== 'hors').length} j de stress</small></div>
       </div></div>`;
   }
 
-  function renderHypotheses(p, param, met, res) {
+  function renderCalcul(p, param, met, res) {
     const cfg = p.config;
-    const cl = param.cl;
     const comp = met.jours.filter(j => finite(j.et0OM) && finite(j.et0));
     const ecart = comp.length ? comp.reduce((s, j) => s + (j.et0 - j.et0OM), 0) / comp.length : null;
-    const estim = new Set(met.jours.flatMap(j => j.estimations || []));
+    const estim = met.jours.some(j => (j.estimations || []).length);
     const k = res.parametres.kcb;
     const st = param.stades;
-    const apTxt = param.ap
-      ? `<li>Kcb de mi-saison par l’approche A&amp;P (chap. 9) : fc ${pct(cfg.culture.ap.fc)} → fc effectif ${pct(param.ap.fcEff)}, Kd ${f2(param.ap.kd)}, Kcb plein ${f2(param.ap.kcbFull)} (Éq. 9.9 à 9.13) → <b>${f2(param.ap.kcb)}</b>.</li>`
-      : '';
+    const annuel = estAnnuel(param.cult);
+    const lib = annuel ? LIBELLES_STADES.annuel : LIBELLES_STADES.perenne;
+    const sys = systemeParId(cfg.irrigation.systeme);
+    const zr = cfg.culture.zr;
+    const ruM = res.parametres.ruParM * (1 - (cfg.sol.cailloux || 0) / 100);
     const stationNom = p.station_id ? (ctx.stations.store.list.find(s => s.id === p.station_id)?.nom || p.station_id) : null;
-    return `<details class="pil-card pil-hyp"><summary>Sources, paramètres et hypothèses</summary>
+    const apTxt = param.ap
+      ? `<li>Coefficient de pleine végétation calculé d’après la couverture mesurée (${pct(cfg.culture.ap.fc)} du sol ombragé) : <b>${f2(param.ap.kcb)}</b>.</li>`
+      : '';
+    return `<details class="pil-card pil-hyp"><summary>Comment est fait le calcul</summary>
       <ul>
-        <li><b>ET₀</b> FAO Penman-Monteith (Éq. 2.4) recalculée chaque jour à partir des données horaires Open-Meteo (réanalyse ERA5 jusqu’à J−8, modèles de prévision ensuite). ${met.sources.station ? `Station SAM ${esc(stationNom)} : températures, humidité et pluie mesurées sur ${met.sources.station} jours.` : 'Aucune station SAM associée.'} ${finite(ecart) ? `Écart moyen avec l’ET₀ publiée par Open-Meteo : ${f2(ecart)} mm/j.` : ''}${estim.size ? ` Estimations FAO pour données manquantes : ${esc([...estim].join(' ; '))}.` : ''}</li>
-        <li><b>Coefficients</b> (${cfg.methode === 'simple' ? 'Kc simple, chap. 6' : 'Kcb + Ke, chap. 7, couche de surface Éq. 7.11–7.14'}) : Kcb ini ${f2(k.ini)}, mi ${f2(k.mi)}, fin ${f2(k.fin)} ${cfg.culture.kcbPerso ? '(valeurs personnalisées)' : `— ${src(cl.kcb.src)}`}${res.parametres.options.ajusterClimat ? ' ajustés au climat (Éq. 7.2)' : ''} ; climat de mi-saison : u₂ ${f1(param.climat.mi.u2)} m/s, HRmin ${f0(param.climat.mi.hrmin)} %.</li>
+        <li><b>Météo</b> : ET₀ calculée chaque jour (formule de Penman-Monteith) à partir des données horaires d’Open-Meteo : réanalyse jusqu’à 8 jours avant aujourd’hui, prévisions ensuite. ${met.sources.station ? `Températures, humidité et pluie mesurées par la station SAM ${esc(stationNom)} sur ${met.sources.station} jours.` : 'Aucune station SAM associée à la parcelle.'}${finite(ecart) ? ` Écart moyen avec l’ET₀ publiée par Open-Meteo : ${f2(ecart)} mm/j.` : ''}${estim ? ' Certaines données manquantes ont été estimées.' : ''}</li>
+        <li><b>Culture</b> : coefficient de transpiration ${f2(k.ini)} au démarrage, ${f2(k.mi)} en pleine végétation, ${f2(k.fin)} en fin de saison${cfg.culture.kcbPerso ? ' (valeurs personnalisées)' : ''}${res.parametres.options.ajusterClimat ? ', ajusté au vent et à l’humidité du site' : ''}. ${cfg.methode === 'simple' ? 'Méthode simplifiée : un coefficient cultural unique.' : 'L’évaporation du sol est calculée à part, selon l’humidité de la surface.'}</li>
         ${apTxt}
-        <li><b>Stades ${S.annee}</b> : ${dateFr(st.debut)}, ${dateFr(st.finIni)}, ${dateFr(st.finDev)}, ${dateFr(st.finMi)}, ${dateFr(st.fin)}. FAO-56 (2025) recommande d’observer les stades sur place.</li>
-        <li><b>Sol</b> : θcc ${f2(cfg.sol.thetaFC)}, θpf ${f2(cfg.sol.thetaWP)} m³/m³ (${esc(solParId(cfg.sol.texture)?.nom ?? '')}, tableau 7.5), RU ${f0(res.parametres.ruParM)} mm/m${cfg.sol.cailloux ? `, cailloux ${f0(cfg.sol.cailloux)} %` : ''} ; TEW ${f1(res.parametres.tew)} mm, REW ${f1(res.parametres.rew)} mm (Ze ${f2(cfg.sol.ze ?? 0.1)} m). Zr ${f2(cfg.culture.zr)} m, p ${f2(cfg.culture.p)} ${parId(p.culture_id)?.p?.src ? src(parId(p.culture_id).p.src) : ''}, ajusté chaque jour à l’ETc (Éq. 8.5).</li>
-        <li><b>Irrigation</b> : ${esc(systemeParId(cfg.irrigation.systeme)?.nom ?? '')}, fw ${f2(cfg.irrigation.fw)} (tableau 7.6), efficience ${pct(cfg.irrigation.efficience)} (valeur à vérifier sur le réseau)${(cfg.irrigation.fractionHumectee ?? 1) < 1 ? `, fraction humectée ${pct(cfg.irrigation.fractionHumectee)} (ajustement de terrain hors FAO-56)` : ''}.</li>
-        <li><b>Hypothèses</b> : ${finite(cfg.etatInitial) && cfg.etatInitial < 1 ? `réserve à ${pct(cfg.etatInitial)}` : 'réserve pleine (capacité au champ)'} le ${dateFr(S.calc.per.debut)} ; sous-sol à la capacité au champ quand les racines progressent ; pluie prévue retenue à ${pct(cfg.strategie?.pluiePrevue ?? 0.5)} ; pas de ruissellement ni de remontée capillaire.</li>
+        <li><b>Saison ${S.annee}</b> : ${lib.map((l, i) => `${esc(l.toLowerCase())} le ${dateFr([st.debut, st.finIni, st.finDev, st.finMi, st.fin][i])}`).join(' ; ')}.</li>
+        <li><b>Sol</b> : ${esc(nomSol(cfg.sol.texture).toLowerCase())}, réserve utile ${f1(ruM / 100)} mm/cm, soit ${f0(ruM * zr)} mm sur ${f2(zr)} m d’enracinement${(cfg.irrigation.fractionHumectee ?? 1) < 1 ? ` (${pct(cfg.irrigation.fractionHumectee)} du volume humecté)` : ''}. RFU : ${pct(cfg.culture.p)} de la RU, ajustée chaque jour selon la chaleur.</li>
+        <li><b>Irrigation</b> : ${esc((sys?.nom ?? '').toLowerCase())}, ${pct(cfg.irrigation.fw)} du sol mouillé, efficience du réseau ${pct(cfg.irrigation.efficience)}.</li>
+        <li><b>Hypothèses</b> : ${finite(cfg.etatInitial) && cfg.etatInitial < 1 ? `réserve remplie à ${pct(cfg.etatInitial)}` : 'réserve pleine'} au début du calcul (${dateFr(S.calc.per.debut)}) ; sol humide en profondeur quand les racines progressent ; pluie prévue comptée à ${pct(cfg.strategie?.pluiePrevue ?? 0.5)} ; ni ruissellement ni remontée d’eau de la nappe.</li>
+        <li><b>Méthode</b> : FAO-56 (FAO, édition 2025), méthode de référence internationale pour les besoins en eau des cultures.</li>
       </ul>
-      <p class="pil-muted">${esc(REFERENCE)}</p>
     </details>`;
   }
 
   function tableJours(jours, tout) {
     const debut = tout ? 0 : Math.max(0, jours.findIndex(j => j.date >= addDaysISO(today, -21)));
     const lignes = jours.slice(debut).reverse();
+    const origines = new Map((S.calc?.meteo || []).map(m => [m.date, m.origine]));
     return `<table class="pil-table">
-      <thead><tr><th>Date</th><th>Stade</th><th>ET₀</th><th>Kcb</th><th>Ke</th><th>Ks</th><th>ETc</th><th>Pluie</th><th>Irrig. brute</th><th>Eau dispo.</th><th>Seuil</th><th>Météo</th></tr></thead>
+      <thead><tr><th>Date</th><th>Stade</th><th>ET₀</th><th>Kc</th><th>ETc</th><th>Pluie</th><th>Irrigation</th><th>Eau disponible</th><th>Seuil</th><th>Stress</th><th>Météo</th></tr></thead>
       <tbody>${lignes.map(j => `<tr class="${j.prevision ? 'is-prev' : ''}${j.stress ? ' is-stress' : ''}">
-        <td>${esc(dateCourte(j.date))}</td><td>${NOMS_STADE[j.stade] || ''}</td><td>${f1(j.et0)}</td><td>${f2(j.kcb)}</td><td>${finite(j.ke) ? f2(j.ke) : '—'}</td>
-        <td>${f2(j.ks)}</td><td>${f1(j.etcAct)}</td><td>${j.pluie ? f1(j.pluie) : ''}</td>
-        <td>${j.irrigationBrute ? `${f1(j.irrigationBrute)}${j.planifiee ? ' <em>conseil</em>' : ''}` : ''}</td>
-        <td>${f0(j.taw - j.dr)} / ${f0(j.taw)}</td><td>${f0(j.taw - j.seuil)}</td><td class="pil-muted">${esc(S.calc?.meteo.find(m => m.date === j.date)?.origine ?? '')}</td></tr>`).join('')}</tbody></table>`;
+        <td>${esc(dateCourte(j.date))}</td><td>${NOMS_STADE[j.stade] || ''}</td><td>${f1(j.et0)}</td><td>${f2(j.kc)}</td><td>${f1(j.etcAct)}</td>
+        <td>${j.pluie ? f1(j.pluie) : ''}</td>
+        <td>${j.irrigationBrute ? `${f1(j.irrigationBrute)}${j.planifiee ? ' <em>calcul</em>' : ''}` : ''}</td>
+        <td>${f0(j.taw - j.dr)} / ${f0(j.taw)}</td><td>${f0(j.taw - j.seuil)}</td><td>${j.stress ? niveauStress(j.ks).toLowerCase() : ''}</td>
+        <td class="pil-muted">${esc(origines.get(j.date) ?? '')}</td></tr>`).join('')}</tbody></table>`;
   }
 
   function exporterCsv() {
@@ -575,20 +630,20 @@ export async function mount(root, ctx) {
     const { res, meteo, p } = S.calc;
     const m = new Map(meteo.map(x => [x.date, x]));
     const cols = [
-      ['date', j => j.date], ['prevision', j => (j.prevision ? 1 : 0)], ['stade', j => j.stade],
-      ['tmax', j => m.get(j.date)?.tmax], ['tmin', j => m.get(j.date)?.tmin], ['hrmin', j => m.get(j.date)?.hrmin], ['u2', j => m.get(j.date)?.u2], ['rs', j => m.get(j.date)?.rs],
-      ['et0_fao_pm', j => j.et0], ['et0_open_meteo', j => m.get(j.date)?.et0OM], ['source_meteo', j => m.get(j.date)?.origine],
-      ['pluie', j => j.pluie], ['pluie_retenue', j => j.pluieRetenue], ['irrigation_brute', j => j.irrigationBrute], ['irrigation_nette', j => j.irrigationNette], ['conseil', j => (j.planifiee ? 1 : 0)],
-      ['kcb', j => j.kcb], ['kc_max', j => j.kcMax], ['fc', j => j.fc], ['few', j => j.few], ['kr', j => j.kr], ['ke', j => j.ke], ['ks', j => j.ks], ['kc_act', j => j.kc],
-      ['h', j => j.h], ['zr', j => j.zr], ['taw', j => j.taw], ['p', j => j.p], ['raw', j => j.raw], ['seuil', j => j.seuil],
-      ['de', j => j.de], ['dr', j => j.dr], ['dp', j => j.dp], ['etc_pot', j => j.etcPot], ['etc_act', j => j.etcAct], ['transpiration', j => j.transpiration], ['evaporation', j => j.evaporation]
+      ['date', j => j.date], ['prevision', j => (j.prevision ? 1 : 0)], ['stade', j => NOMS_STADE[j.stade]],
+      ['t_max', j => m.get(j.date)?.tmax], ['t_min', j => m.get(j.date)?.tmin], ['hr_min', j => m.get(j.date)?.hrmin], ['vent_2m', j => m.get(j.date)?.u2], ['rayonnement_MJ', j => m.get(j.date)?.rs],
+      ['et0', j => j.et0], ['et0_open_meteo', j => m.get(j.date)?.et0OM], ['source_meteo', j => m.get(j.date)?.origine],
+      ['pluie', j => j.pluie], ['pluie_comptee', j => j.pluieRetenue], ['irrigation_apportee', j => j.irrigationBrute], ['irrigation_utile', j => j.irrigationNette], ['apport_calcule', j => (j.planifiee ? 1 : 0)],
+      ['coef_transpiration', j => j.kcb], ['kc_maximal', j => j.kcMax], ['couverture_sol', j => j.fc], ['sol_evaporant', j => j.few], ['reduction_evaporation', j => j.kr], ['coef_evaporation_sol', j => j.ke], ['coef_stress_1_sans_stress', j => j.ks], ['kc_reel', j => j.kc],
+      ['hauteur', j => j.h], ['enracinement', j => j.zr], ['RU', j => j.taw], ['part_RFU', j => j.p], ['RFU', j => j.raw], ['seuil', j => j.seuil],
+      ['deficit_surface', j => j.de], ['eau_consommee_RU', j => j.dr], ['eau_disponible', j => j.taw - j.dr], ['percolation', j => j.dp], ['ETc_sans_stress', j => j.etcPot], ['ETc_reelle', j => j.etcAct], ['transpiration', j => j.transpiration], ['evaporation', j => j.evaporation]
     ];
     const cell = v => (v === null || v === undefined ? '' : typeof v === 'number' ? String(+v.toFixed(4)).replace('.', ',') : `"${String(v).replace(/"/g, '""')}"`);
     const csv = [cols.map(c => c[0]).join(';'), ...res.jours.map(j => cols.map(c => cell(c[1](j))).join(';'))].join('\n');
-    const blob = new Blob([`﻿# ${REFERENCE}\n${csv}`], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([`﻿# Bilan irrigation SAM — ${p.nom} — saison ${S.annee}\n${csv}`], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `pilotage_${p.nom.replace(/[^\w-]+/g, '_')}_${S.annee}.csv`;
+    a.download = `bilan_irrigation_${p.nom.replace(/[^\w-]+/g, '_')}_${S.annee}.csv`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
@@ -603,7 +658,7 @@ export async function mount(root, ctx) {
     const reserve = jours.map(j => +(j.taw - j.dr).toFixed(1));
     const pluie = jours.map(j => (j.pluie > 0 ? +j.pluie.toFixed(1) : null));
     const irrig = jours.map(j => (j.irrigationBrute > 0 && !j.planifiee ? +j.irrigationBrute.toFixed(1) : null));
-    const conseil = jours.map(j => (j.planifiee ? +j.planifiee.brut.toFixed(1) : null));
+    const calcul = jours.map(j => (j.planifiee ? +j.planifiee.brut.toFixed(1) : null));
     const aujourdhuiPlugin = {
       id: 'pilAujourdhui',
       afterDatasetsDraw(chart) {
@@ -627,13 +682,13 @@ export async function mount(root, ctx) {
       data: {
         labels,
         datasets: [
-          { type: 'line', label: 'Eau disponible', data: reserve, borderColor: '#c5011a', backgroundColor: 'rgba(197,1,26,.08)', fill: 'origin', borderWidth: 2.2, pointRadius: 0, tension: 0.15, yAxisID: 'y', order: 1,
+          { type: 'line', label: 'Eau disponible dans le sol', data: reserve, borderColor: '#c5011a', backgroundColor: 'rgba(197,1,26,.08)', fill: 'origin', borderWidth: 2.2, pointRadius: 0, tension: 0.15, yAxisID: 'y', order: 1,
             segment: { borderDash: c => (prev(c.p1DataIndex) ? [6, 4] : undefined) } },
-          { type: 'line', label: 'RU (capacité au champ)', data: jours.map(j => +j.taw.toFixed(1)), borderColor: '#6b717b', borderWidth: 1.4, pointRadius: 0, yAxisID: 'y', order: 2 },
-          { type: 'line', label: 'Seuil de déclenchement', data: jours.map(j => +(j.taw - j.seuil).toFixed(1)), borderColor: '#e08a00', borderDash: [5, 4], borderWidth: 1.6, pointRadius: 0, yAxisID: 'y', order: 3 },
+          { type: 'line', label: 'Réserve utile (sol plein)', data: jours.map(j => +j.taw.toFixed(1)), borderColor: '#6b717b', borderWidth: 1.4, pointRadius: 0, yAxisID: 'y', order: 2 },
+          { type: 'line', label: 'Seuil d’irrigation', data: jours.map(j => +(j.taw - j.seuil).toFixed(1)), borderColor: '#e08a00', borderDash: [5, 4], borderWidth: 1.6, pointRadius: 0, yAxisID: 'y', order: 3 },
           { type: 'bar', label: 'Pluie', data: pluie, backgroundColor: 'rgba(43,121,194,.65)', yAxisID: 'y2', order: 5, barPercentage: 1, categoryPercentage: 0.9 },
           { type: 'bar', label: 'Irrigation saisie', data: irrig, backgroundColor: 'rgba(46,125,50,.8)', yAxisID: 'y2', order: 4, barPercentage: 1, categoryPercentage: 0.9 },
-          { type: 'bar', label: 'Irrigation conseillée', data: conseil, backgroundColor: 'rgba(87,165,61,.35)', borderColor: '#2e7d32', borderWidth: 1, borderDash: [3, 2], yAxisID: 'y2', order: 4, barPercentage: 1, categoryPercentage: 0.9 }
+          { type: 'bar', label: 'Apport calculé', data: calcul, backgroundColor: 'rgba(87,165,61,.35)', borderColor: '#2e7d32', borderWidth: 1, yAxisID: 'y2', order: 4, barPercentage: 1, categoryPercentage: 0.9 }
         ]
       },
       options: {
@@ -642,7 +697,7 @@ export async function mount(root, ctx) {
         animation: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { position: 'bottom', labels: { boxWidth: 14, usePointStyle: false, font: { size: 12 } } },
+          legend: { position: 'bottom', labels: { boxWidth: 14, font: { size: 12 } } },
           tooltip: {
             callbacks: {
               title: items => (items[0] ? `${dateCourte(labels[items[0].dataIndex])}${prev(items[0].dataIndex) ? ' (prévision)' : ''}` : ''),
@@ -666,64 +721,80 @@ export async function mount(root, ctx) {
   // ---------------------------------------------------------------------------
   function renderSaisies() {
     const p = courante();
-    const pluvio = p.config.irrigation.pluvio;
-    const irr = [...S.irrigations].sort((a, b) => b.jour.localeCompare(a.jour));
+    const irr = p.config.irrigation;
+    const pluvio = irr.pluvio;
+    const avecPluvio = finite(pluvio) && pluvio > 0;
+    const liste = [...S.irrigations].sort((a, b) => b.jour.localeCompare(a.jour));
     const pl = [...S.pluies].sort((a, b) => b.jour.localeCompare(a.jour));
+    const total = liste.reduce((s, r) => s + Number(r.dose_brute_mm || 0), 0);
+    const unites = `<option value="mm">mm</option><option value="m3ha">m³/ha</option>
+      <option value="heures"${avecPluvio ? '' : ' disabled'}>heures de poste${avecPluvio ? ` (${f2(pluvio)} mm/h)` : ' (pluviométrie à renseigner)'}</option>`;
     panel.innerHTML = `<div class="pil-grid pil-grid-2">
       <form class="pil-card" id="pil-form-irr" autocomplete="off">
         <h3>Ajouter une irrigation</h3>
         <div class="pil-fields">
           <label class="sam-field">Date<input type="date" name="jour" value="${today}" max="${addDaysISO(today, 7)}" required></label>
-          <label class="sam-field">Quantité<input name="valeur" inputmode="decimal" placeholder="ex. 12" required></label>
-          <label class="sam-field">Unité<select name="unite" class="sam-input">
-            <option value="mm">mm bruts</option><option value="m3ha">m³/ha</option>
-            <option value="heures"${finite(pluvio) && pluvio > 0 ? '' : ' disabled'}>heures de poste${finite(pluvio) && pluvio > 0 ? ` (${f2(pluvio)} mm/h)` : ' (pluviométrie à renseigner)'}</option>
-          </select></label>
+          <label class="sam-field">Quantité apportée<input name="valeur" inputmode="decimal" placeholder="ex. 12" required></label>
+          <label class="sam-field">Unité<select name="unite" class="sam-input">${unites}</select></label>
         </div>
-        <details class="pil-sub"><summary>Répéter sur une période (goutte-à-goutte, micro-aspersion)</summary>
+        <details class="pil-sub"><summary>Même apport sur plusieurs jours (goutte-à-goutte, micro-aspersion)</summary>
           <div class="pil-fields">
             <label class="sam-field">Jusqu’au<input type="date" name="jusqu" max="${addDaysISO(today, 7)}"></label>
             <label class="sam-field">Tous les (jours)<input name="pas" inputmode="numeric" value="1"></label>
           </div>
         </details>
         <label class="sam-field">Note<input name="note" maxlength="200" placeholder="facultatif"></label>
-        <p class="pil-muted" id="pil-irr-apercu">Dose brute = eau apportée par le réseau. La dose nette (efficience ${pct(p.config.irrigation.efficience)}) est déduite par le calcul.</p>
+        <p class="pil-aide" id="pil-irr-apercu">Indiquez l’eau apportée par le réseau. La part utile aux racines est calculée avec l’efficience du réseau (${pct(irr.efficience)}).</p>
         <div class="pil-actions"><button type="submit" class="sam-button sam-button-primary">Enregistrer</button></div>
         <p class="sam-form-message" id="pil-irr-msg"></p>
       </form>
-      <form class="pil-card" id="pil-form-pluie" autocomplete="off">
-        <h3>Corriger la pluie (pluviomètre de la parcelle)</h3>
-        <p class="pil-muted">La valeur saisie remplace la pluie Open-Meteo ou celle de la station pour ce jour.</p>
+      <div class="pil-card" id="pil-import">
+        <h3>Importer un fichier Excel</h3>
+        <p class="pil-aide">Fichier .xlsx ou .xls avec deux colonnes : <b>Date</b> et <b>Apport</b>. Une ligne par irrigation, les dates peuvent couvrir toute l’année.</p>
         <div class="pil-fields">
-          <label class="sam-field">Date<input type="date" name="jour" value="${addDaysISO(today, -1)}" max="${today}" required></label>
-          <label class="sam-field">Pluie (mm)<input name="mm" inputmode="decimal" required></label>
+          <label class="sam-field pil-large">Fichier Excel<input type="file" id="pil-import-fichier" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"></label>
+          <label class="sam-field">Unité de la colonne Apport<select id="pil-import-unite" class="sam-input">${unites}</select></label>
         </div>
-        <div class="pil-actions"><button type="submit" class="sam-button">Enregistrer</button></div>
-        <p class="sam-form-message" id="pil-pluie-msg"></p>
-      </form>
+        <div id="pil-import-apercu"></div>
+        <p class="sam-form-message" id="pil-import-msg"></p>
+      </div>
     </div>
     <div class="pil-grid pil-grid-2">
-      <div class="pil-card"><h3>Irrigations saisies <span class="pil-muted">(${irr.length})</span></h3>
-        ${irr.length ? `<table class="pil-table"><thead><tr><th>Date</th><th>Brut (mm)</th><th>m³/ha</th><th>Saisie</th><th></th></tr></thead><tbody>
-          ${irr.map(r => `<tr><td>${esc(dateCourte(r.jour))}</td><td>${f1(Number(r.dose_brute_mm))}</td><td>${f0(IR.mmVersM3ha(Number(r.dose_brute_mm)))}</td>
+      <div class="pil-card">
+        <div class="pil-card-head"><h3>Irrigations enregistrées <span class="pil-muted">(${liste.length}${liste.length ? ` · ${f0(total)} mm` : ''})</span></h3>
+          ${liste.length ? '<button type="button" class="sam-button pil-danger" data-action="suppr-toutes-irr">Tout supprimer</button>' : ''}</div>
+        ${liste.length ? `<div class="pil-table-wrap pil-liste"><table class="pil-table"><thead><tr><th>Date</th><th>Apport (mm)</th><th>m³/ha</th><th>Saisie</th><th></th></tr></thead><tbody>
+          ${liste.map(r => `<tr><td>${esc(dateCourte(r.jour))}</td><td>${f1(Number(r.dose_brute_mm))}</td><td>${f0(IR.mmVersM3ha(Number(r.dose_brute_mm)))}</td>
             <td class="pil-muted">${esc(r.saisie ? `${f2(r.saisie.valeur)} ${r.saisie.unite === 'm3ha' ? 'm³/ha' : r.saisie.unite === 'heures' ? 'h' : 'mm'}` : '')}${r.note ? ` · ${esc(r.note)}` : ''}</td>
             <td><button type="button" class="pil-suppr" data-action="suppr-irr" data-id="${esc(r.id)}" aria-label="Supprimer">✕</button></td></tr>`).join('')}
-        </tbody></table>` : '<p class="pil-muted">Aucune irrigation saisie.</p>'}
+        </tbody></table></div>` : '<p class="pil-muted">Aucune irrigation enregistrée.</p>'}
       </div>
-      <div class="pil-card"><h3>Pluies corrigées <span class="pil-muted">(${pl.length})</span></h3>
-        ${pl.length ? `<table class="pil-table"><thead><tr><th>Date</th><th>Pluie (mm)</th><th></th></tr></thead><tbody>
-          ${pl.map(r => `<tr><td>${esc(dateCourte(r.jour))}</td><td>${f1(Number(r.pluie_mm))}</td><td><button type="button" class="pil-suppr" data-action="suppr-pluie" data-id="${esc(r.id)}" aria-label="Supprimer">✕</button></td></tr>`).join('')}
-        </tbody></table>` : '<p class="pil-muted">Aucune correction.</p>'}
+      <div>
+        <form class="pil-card" id="pil-form-pluie" autocomplete="off">
+          <h3>Pluie mesurée sur la parcelle</h3>
+          <p class="pil-aide">Relevé de votre pluviomètre : il remplace la pluie de la météo (Open-Meteo ou station) pour ce jour.</p>
+          <div class="pil-fields">
+            <label class="sam-field">Date<input type="date" name="jour" value="${addDaysISO(today, -1)}" max="${today}" required></label>
+            <label class="sam-field">Pluie (mm)<input name="mm" inputmode="decimal" required></label>
+          </div>
+          <div class="pil-actions"><button type="submit" class="sam-button">Enregistrer</button></div>
+          <p class="sam-form-message" id="pil-pluie-msg"></p>
+        </form>
+        <div class="pil-card"><h3>Pluies mesurées <span class="pil-muted">(${pl.length})</span></h3>
+          ${pl.length ? `<table class="pil-table"><thead><tr><th>Date</th><th>Pluie (mm)</th><th></th></tr></thead><tbody>
+            ${pl.map(r => `<tr><td>${esc(dateCourte(r.jour))}</td><td>${f1(Number(r.pluie_mm))}</td><td><button type="button" class="pil-suppr" data-action="suppr-pluie" data-id="${esc(r.id)}" aria-label="Supprimer">✕</button></td></tr>`).join('')}
+          </tbody></table>` : '<p class="pil-muted">Aucun relevé.</p>'}
+        </div>
       </div>
     </div>`;
     const formIrr = $('#pil-form-irr');
-    const apercu = () => {
+    const aideDefaut = $('#pil-irr-apercu').textContent;
+    formIrr.addEventListener('input', () => {
       const brut = IR.brutDepuisSaisie({ unite: formIrr.unite.value, valeur: num(formIrr.valeur.value), pluvioMmH: pluvio });
       $('#pil-irr-apercu').textContent = finite(brut)
-        ? `= ${f1(brut)} mm bruts · ${f0(IR.mmVersM3ha(brut))} m³/ha · dose nette ${f1(IR.netDepuisBrut(brut, p.config.irrigation.efficience))} mm${finite(pluvio) && pluvio > 0 ? ` · ${IR.formatDuree(brut / pluvio)}` : ''}`
-        : `Dose brute = eau apportée par le réseau. La dose nette (efficience ${pct(p.config.irrigation.efficience)}) est déduite par le calcul.`;
-    };
-    formIrr.addEventListener('input', apercu);
+        ? `Soit ${f1(brut)} mm (${f0(IR.mmVersM3ha(brut))} m³/ha), dont ${f1(IR.netDepuisBrut(brut, irr.efficience))} mm utiles aux racines${avecPluvio ? ` · ${IR.formatDuree(brut / pluvio)} de poste` : ''}.`
+        : aideDefaut;
+    });
     formIrr.addEventListener('submit', async e => {
       e.preventDefault();
       const msg = $('#pil-irr-msg');
@@ -767,6 +838,83 @@ export async function mount(root, ctx) {
         msg.classList.add('is-error');
       }
     });
+    $('#pil-import-fichier').addEventListener('change', lireImport);
+    $('#pil-import-unite').addEventListener('change', () => { if ($('#pil-import-fichier').files?.length) lireImport(); });
+  }
+
+  /** Lecture du fichier Excel d'irrigations (colonnes Date et Apport) et aperçu avant import. */
+  async function lireImport() {
+    const p = courante();
+    const input = $('#pil-import-fichier');
+    const msg = $('#pil-import-msg');
+    const zone = $('#pil-import-apercu');
+    S.importLignes = null;
+    zone.innerHTML = '';
+    msg.textContent = '';
+    msg.classList.remove('is-error');
+    const file = input.files?.[0];
+    if (!file) return;
+    try { await ctx.vendor.xlsx(); } catch { /* message ci-dessous */ }
+    if (!window.XLSX) { msg.textContent = 'Le module Excel n’a pas pu être chargé.'; msg.classList.add('is-error'); return; }
+    try {
+      // Sans cellDates : les dates arrivent en numéro de série, converties sans décalage horaire
+      const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = window.XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
+      if (!raw.length) throw new Error('Le fichier ne contient aucune ligne.');
+      const norm = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const entetes = Object.keys(raw[0]);
+      const cleDate = entetes.find(h => ['date', 'dateirrigation', 'jour'].includes(norm(h)));
+      const cleApport = entetes.find(h => ['apport', 'apportmm', 'irrigation', 'irrigationmm', 'quantite', 'quantitemm', 'mm', 'dose', 'dosemm', 'apportm3ha', 'm3ha', 'volume', 'volumem3ha', 'duree', 'dureeh', 'heures'].includes(norm(h)));
+      if (!cleDate || !cleApport) throw new Error('Le fichier doit contenir une colonne « Date » et une colonne « Apport ».');
+      // Unité devinée d'après l'en-tête de colonne, sinon celle choisie dans la liste
+      const nh = norm(cleApport);
+      const sel = $('#pil-import-unite');
+      if (/m3/.test(nh) || nh === 'volume') sel.value = 'm3ha';
+      else if (/duree|heure/.test(nh) && !sel.querySelector('option[value="heures"]').disabled) sel.value = 'heures';
+      const unite = sel.value;
+      const pluvio = p.config.irrigation.pluvio;
+      const valides = [];
+      const erreurs = [];
+      raw.forEach((row, i) => {
+        const jour = dateExcel(row[cleDate]);
+        const valeur = num(row[cleApport]);
+        if (row[cleDate] === null && row[cleApport] === null) return;
+        if (!jour) { erreurs.push(`ligne ${i + 2} : date illisible`); return; }
+        const brut = IR.brutDepuisSaisie({ unite, valeur, pluvioMmH: pluvio });
+        if (!finite(brut) || brut < 0 || brut > 500) { erreurs.push(`ligne ${i + 2} : apport invalide`); return; }
+        if (brut === 0) return;
+        valides.push({ parcelle_id: p.id, jour, dose_brute_mm: +brut.toFixed(2), saisie: { unite, valeur, pluvio: unite === 'heures' ? pluvio : null }, note: 'Import Excel' });
+      });
+      if (!valides.length) throw new Error(erreurs[0] ? `Aucune irrigation valide (${erreurs[0]}).` : 'Aucune irrigation valide à importer.');
+      const existants = new Set(S.irrigations.map(r => `${r.jour}|${(+Number(r.dose_brute_mm).toFixed(1))}`));
+      const nouveaux = valides.filter(r => !existants.has(`${r.jour}|${+r.dose_brute_mm.toFixed(1)}`));
+      const doublons = valides.length - nouveaux.length;
+      S.importLignes = nouveaux;
+      const dates = valides.map(r => r.jour).sort();
+      const total = nouveaux.reduce((s, r) => s + r.dose_brute_mm, 0);
+      zone.innerHTML = `<div class="pil-import-apercu">
+        <p><b>${valides.length} irrigation${valides.length > 1 ? 's' : ''} lue${valides.length > 1 ? 's' : ''}</b> du ${dateFr(dates[0])} au ${dateFr(dates[dates.length - 1])}${nouveaux.length ? ` · ${nouveaux.length} à importer, total ${f1(total)} mm (${f0(IR.mmVersM3ha(total))} m³/ha)` : ''}.</p>
+        ${doublons ? `<p class="pil-muted">${doublons} déjà enregistrée${doublons > 1 ? 's' : ''} (même date, même apport) : ignorée${doublons > 1 ? 's' : ''}.</p>` : ''}
+        ${erreurs.length ? `<p class="pil-muted">${erreurs.length} ligne${erreurs.length > 1 ? 's' : ''} ignorée${erreurs.length > 1 ? 's' : ''} : ${esc(erreurs.slice(0, 3).join(' ; '))}${erreurs.length > 3 ? '…' : ''}.</p>` : ''}
+        ${nouveaux.length ? '<div class="pil-actions pil-actions-tight"><button type="button" class="sam-button sam-button-primary" data-action="importer">Importer ces irrigations</button><button type="button" class="sam-button" data-action="annuler-import">Annuler</button></div>' : ''}
+      </div>`;
+    } catch (error) {
+      msg.textContent = error.message || 'Lecture du fichier impossible.';
+      msg.classList.add('is-error');
+    }
+  }
+
+  async function importer() {
+    const p = courante();
+    if (!p || !S.importLignes?.length) return;
+    const n = S.importLignes.length;
+    await store.ajouterIrrigations(S.importLignes);
+    S.importLignes = null;
+    S.irrigations = await store.irrigations(p.id);
+    ctx.ui.toast(`${n} irrigation${n > 1 ? 's' : ''} importée${n > 1 ? 's' : ''}`);
+    renderSaisies();
+    calculer();
   }
 
   // ---------------------------------------------------------------------------
@@ -795,18 +943,24 @@ export async function mount(root, ctx) {
     const loc = cfg.irrigation.localise || {};
     const libStades = annuel ? LIBELLES_STADES.annuel : LIBELLES_STADES.perenne;
     const champsStades = ['debut', 'finIni', 'finDev', 'finMi', 'fin'];
-    const familles = Object.entries(FAMILLES).filter(([k]) => CULTURES.some(c => c.famille === k));
     const ap = cfg.culture.ap || {};
-    const opt = (v, cur, label) => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(label)}</option>`;
+    const opt = (v, cur, label, extra = '') => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}${extra}>${esc(label)}</option>`;
     const n = (v, dgt = 2) => (finite(v) ? String(+v.toFixed(dgt)).replace('.', ',') : '');
-    const ru = finite(cfg.sol.ruParM) ? cfg.sol.ruParM : 1000 * (cfg.sol.thetaFC - cfg.sol.thetaWP);
-    const taw = ru * cfg.culture.zr * (1 - (cfg.sol.cailloux || 0) / 100) * (cfg.irrigation.fractionHumectee ?? 1);
-    const gddOptions = (cult.gdd || []).map((g, i) => opt(i, 0, `${g.type} — ${f0(g.total)} °C·j`)).join('');
+    const ruM = (finite(cfg.sol.ruParM) ? cfg.sol.ruParM : ruSol(cfg.sol)) * (1 - (cfg.sol.cailloux || 0) / 100);
+    const ruZone = ruM * cfg.culture.zr * (cfg.irrigation.fractionHumectee ?? 1);
+    const especes = Object.entries(FAMILLES).map(([k, v]) => {
+      const liste = CULTURES.filter(c => c.famille === k);
+      return liste.length ? `<optgroup label="${esc(v)}">${liste.map(c => opt(c.id, cult.id, c.nom)).join('')}</optgroup>` : '';
+    }).join('');
+    const aideConduite = annuel
+      ? 'La conduite précise le type de production (par exemple tomate d’industrie ou de marché). Elle fixe les coefficients de besoin en eau de la culture.'
+      : `La conduite décrit l’âge et la forme de la plantation, le nombre ${cult.famille === 'vigne' ? 'de pieds' : cult.id === 'kiwi' || cult.id === 'myrtillier' || cult.id === 'ronce' || cult.id === 'houblon' ? 'de plants' : 'd’arbres'} par hectare et le développement de la végétation (couverture : part du sol ombragée par le feuillage). Elle fixe les coefficients de besoin en eau.`;
+    const gddOptions = (cult.gdd || []).map((g, i) => opt(i, 0, `${g.type} — ${f0(g.total)} degrés-jours`)).join('');
     panel.innerHTML = `<form id="pil-form" class="pil-form" autocomplete="off" novalidate>
       <div class="pil-card pil-form-head">
         <h2>${d.id ? `Réglages — ${esc(d.nom)}` : 'Nouvelle parcelle'}</h2>
         <div class="pil-actions">
-          ${d.id ? '<button type="button" class="sam-button" data-action="dupliquer">Dupliquer</button><button type="button" class="sam-button pil-danger" data-action="supprimer">Supprimer</button>' : '<button type="button" class="sam-button" data-action="anciennes">Reprendre une parcelle du Bilan hydrique</button>'}
+          ${d.id ? '<button type="button" class="sam-button" data-action="dupliquer">Dupliquer</button><button type="button" class="sam-button pil-danger" data-action="supprimer">Supprimer</button>' : '<button type="button" class="sam-button" data-action="anciennes">Reprendre une parcelle de l’ancien Bilan hydrique</button>'}
           <button type="submit" class="sam-button sam-button-primary">Enregistrer</button>
         </div>
         <div id="pil-anciennes"></div>
@@ -815,119 +969,115 @@ export async function mount(root, ctx) {
 
       <fieldset class="pil-card"><legend>Parcelle</legend>
         <div class="pil-fields">
-          <label class="sam-field">Nom<input name="nom" value="${esc(d.nom)}" required maxlength="80" placeholder="ex. Gala — bloc 3"></label>
-          <label class="sam-field">Surface (ha)<input name="surface_ha" inputmode="decimal" value="${n(d.surface_ha, 3)}" placeholder="facultatif"></label>
+          <label class="sam-field">Nom de la parcelle<input name="nom" value="${esc(d.nom)}" required maxlength="80" placeholder="ex. Gala — bloc 3"></label>
+          <label class="sam-field">Surface (ha)<input name="surface_ha" inputmode="decimal" value="${n(d.surface_ha, 3)}" placeholder="facultatif"><small class="pil-aide">Pour obtenir les volumes en m³.</small></label>
           <label class="sam-field pil-lieu">Commune<input name="lieu" value="${esc(d.lieu || '')}" placeholder="Rechercher une commune…"><div class="pil-lieu-res" id="pil-lieu-res"></div></label>
           <label class="sam-field">Latitude (°)<input name="latitude" inputmode="decimal" value="${n(d.latitude, 4)}" required></label>
           <label class="sam-field">Longitude (°)<input name="longitude" inputmode="decimal" value="${n(d.longitude, 4)}" required></label>
-          <label class="sam-field">Altitude (m)<input name="altitude" inputmode="decimal" value="${n(d.altitude, 0)}" placeholder="auto"></label>
-          <label class="sam-field">Station SAM (T, HR, pluie mesurées)<select name="station_id" class="sam-input">${opt('', d.station_id || '', 'Aucune — Open-Meteo seul')}${stations.map(s => opt(s.id, d.station_id || '', `${s.nom}${s.commune ? ` (${s.commune})` : ''}`)).join('')}</select></label>
+          <label class="sam-field">Altitude (m)<input name="altitude" inputmode="decimal" value="${n(d.altitude, 0)}" placeholder="automatique"></label>
+          <label class="sam-field pil-large">Station météo SAM (facultatif)<select name="station_id" class="sam-input">${opt('', d.station_id || '', 'Aucune : météo Open-Meteo seule')}${stations.map(s => opt(s.id, d.station_id || '', `${s.nom}${s.commune ? ` (${s.commune})` : ''}`)).join('')}</select><small class="pil-aide">Les températures, l’humidité et la pluie mesurées par la station remplacent celles d’Open-Meteo.</small></label>
         </div>
         <div class="pil-actions pil-actions-tight"><button type="button" class="sam-button" data-action="gps">Utiliser ma position</button></div>
       </fieldset>
 
-      <fieldset class="pil-card"><legend>Culture (tableaux 6.x, 7.x et 8.x)</legend>
+      <fieldset class="pil-card"><legend>Culture</legend>
         <div class="pil-fields">
-          <label class="sam-field">Famille<select name="famille" class="sam-input">${familles.map(([k, v]) => opt(k, cult.famille, v)).join('')}</select></label>
-          <label class="sam-field">Culture<select name="culture_id" class="sam-input">${CULTURES.filter(c => c.famille === cult.famille).map(c => opt(c.id, cult.id, c.nom)).join('')}</select></label>
-          <label class="sam-field pil-large">Classe FAO (densité, conduite, couvert)<select name="classe_id" class="sam-input">${cult.classes.map(c => opt(c.id, cl.id, c.nom)).join('')}</select></label>
+          <label class="sam-field">Espèce<select name="culture_id" class="sam-input">${especes}</select></label>
+          <label class="sam-field pil-pleine">Conduite<select name="classe_id" class="sam-input">${cult.classes.map(c => opt(c.id, cl.id, c.nom)).join('')}</select></label>
         </div>
-        <div class="pil-ref">
-          <span>Kcb ini <b>${f2(cl.kcb.ini)}</b> · mi <b>${f2(cl.kcb.mid)}</b> · fin <b>${f2(cl.kcb.end)}</b> ${src(cl.kcb.src)}</span>
-          ${cl.kc ? `<span>Kc ${f2(cl.kc.ini)} · ${f2(cl.kc.mid)} · ${f2(cl.kc.end)} ${src(cl.kc.src)}</span>` : ''}
-          <span>fc ${plage(cl.fc)} · h ${plage(cl.h)} m${cl.zr ? ` · Zr ${plage(cl.zr)} m` : ''}</span>
-          <span>p ${cult.p?.p != null ? f2(cult.p.p) : esc(cult.p?.txt || '—')} ${cult.p?.src ? src(cult.p.src) : ''}</span>
-          ${cult.note ? `<span class="pil-muted">${esc(cult.note)}</span>` : ''}
-        </div>
+        <p class="pil-aide">${esc(aideConduite)}</p>
+        <p class="pil-ref">${esc(decrireConduite(cult, cl))}</p>
         <div class="pil-fields">
-          <label class="sam-field">Fraction p (RFU / RU)<input name="p" inputmode="decimal" value="${n(cfg.culture.p)}"></label>
-          <label class="sam-field">Hauteur h (m)<input name="h" inputmode="decimal" value="${n(cfg.culture.h)}"></label>
-          <label class="sam-field">Profondeur racinaire Zr (m)<input name="zr" inputmode="decimal" value="${n(cfg.culture.zr)}"></label>
-          ${annuel ? `<label class="sam-field">Zr au semis (m)<input name="zrMin" inputmode="decimal" value="${n(cfg.culture.zrMin)}"></label>` : ''}
-          <label class="sam-field">Kcb hors saison<input name="kcbHorsSaison" inputmode="decimal" value="${n(cfg.culture.kcbHorsSaison)}"></label>
-          <label class="sam-field">Méthode<select name="methode" class="sam-input">${opt('double', cfg.methode, 'Double : Kcb + Ke')}${cl.kc ? opt('simple', cfg.methode, 'Simple : Kc') : ''}</select></label>
+          <label class="sam-field">Profondeur d’enracinement (m)<input name="zr" inputmode="decimal" value="${n(cfg.culture.zr)}"><small class="pil-aide">${annuel ? 'Profondeur atteinte en pleine végétation.' : 'Non fournie par la méthode pour les arbres et la vigne : 0,8 m par défaut, à ajuster (fosse, sondes).'}</small></label>
+          <label class="sam-field">Hauteur de la culture (m)<input name="h" inputmode="decimal" value="${n(cfg.culture.h)}"></label>
         </div>
-        ${!annuel && !cl.zr ? `<p class="pil-note">${esc(DEFAUTS_TERRAIN.zrLigneux.note)}</p>` : ''}
-        ${cult.p?.p == null && cult.p?.txt ? `<p class="pil-note">FAO : ${esc(cult.p.txt)} — saisissez une fraction p adaptée.</p>` : ''}
-        <details class="pil-sub"${cfg.culture.kcbPerso ? ' open' : ''}><summary>Kcb personnalisés (calage local)</summary>
-          <label class="pil-check"><input type="checkbox" name="kcbPersoActif"${cfg.culture.kcbPerso ? ' checked' : ''}> Remplacer les valeurs du tableau</label>
+        <details class="pil-sub"><summary>Réglages avancés de la culture</summary>
           <div class="pil-fields">
-            <label class="sam-field">Kcb ini<input name="kcbIni" inputmode="decimal" value="${n(cfg.culture.kcbPerso?.ini ?? cl.kcb.ini)}"></label>
-            <label class="sam-field">Kcb mi-saison<input name="kcbMi" inputmode="decimal" value="${n(cfg.culture.kcbPerso?.mi ?? cl.kcb.mid)}"></label>
-            <label class="sam-field">Kcb fin<input name="kcbFin" inputmode="decimal" value="${n(cfg.culture.kcbPerso?.fin ?? cl.kcb.end)}"></label>
+            <label class="sam-field">RFU (% de la RU)<input name="p" inputmode="decimal" value="${n(cfg.culture.p * 100, 0)}"><small class="pil-aide">Part de la réserve utile que la culture prélève sans difficulté.${finite(cult.p?.p) ? ` Valeur de référence : ${f0(cult.p.p * 100)} %.` : ''}</small></label>
+            ${annuel ? `<label class="sam-field">Enracinement au semis (m)<input name="zrMin" inputmode="decimal" value="${n(cfg.culture.zrMin)}"></label>` : ''}
+            <label class="sam-field">Coefficient hors saison<input name="kcbHorsSaison" inputmode="decimal" value="${n(cfg.culture.kcbHorsSaison)}"><small class="pil-aide">${annuel ? 'Avant le semis et après la récolte (sol nu : 0,15).' : 'Avant le débourrement et après la chute des feuilles (sol nu ou enherbé).'}</small></label>
+            <label class="sam-field pil-large">Méthode de calcul<select name="methode" class="sam-input">${opt('double', cfg.methode, 'Détaillée : transpiration et évaporation du sol séparées')}${cl.kc ? opt('simple', cfg.methode, 'Simplifiée : coefficient cultural unique (Kc)') : ''}</select></label>
           </div>
-          <label class="pil-check"><input type="checkbox" name="ajusterClimat"${cfg.culture.ajusterClimat !== false ? ' checked' : ''}> Ajuster mi-saison et fin au climat local (Éq. 7.2 : vent, HRmin, hauteur)</label>
-        </details>
-        <details class="pil-sub"${ap.actif ? ' open' : ''}><summary>Kcb de mi-saison d’après la couverture mesurée (approche A&amp;P, chap. 9)</summary>
-          <label class="pil-check"><input type="checkbox" name="apActif"${ap.actif ? ' checked' : ''}> Utiliser l’approche A&amp;P (Éq. 9.9 à 9.13)</label>
-          <div class="pil-fields">
-            <label class="sam-field">Couverture fc (%)<input name="apFc" inputmode="decimal" value="${n((ap.fc ?? 0.5) * 100, 0)}"></label>
-            <label class="sam-field">Forme<select name="apForme" class="sam-input">${opt('arbres', ap.forme, 'Arbres isolés (couronne)')}${opt('rangs', ap.forme, 'Rangs / haie fruitière / vigne palissée')}</select></label>
-            <label class="sam-field">Hauteur de la haie (m)<input name="apHaut" inputmode="decimal" value="${n(ap.hauteurCanopee)}"></label>
-            <label class="sam-field">Largeur de la haie (m)<input name="apLarg" inputmode="decimal" value="${n(ap.largeur)}"></label>
-            <label class="sam-field">Orientation des rangs<select name="apAngle" class="sam-input">${opt(90, ap.angleRang, 'Nord-sud')}${opt(45, ap.angleRang, 'Nord-est / sud-ouest')}${opt(0, ap.angleRang, 'Est-ouest')}</select></label>
-            <label class="sam-field">ML (tableau 9.3)<input name="apMl" inputmode="decimal" value="${n(ap.ml)}"></label>
-            <label class="sam-field">Fr (régulation stomatique)<input name="apFr" inputmode="decimal" value="${n(ap.fr)}"></label>
-            <label class="sam-field">Kcb du couvert de l’inter-rang<input name="apCouvert" inputmode="decimal" value="${n(ap.kcbCouvert)}" placeholder="vide = sol nu"></label>
+          ${!finite(cult.p?.p) && cult.p?.txt ? '<p class="pil-note">Pas de valeur de référence de RFU pour cette culture : saisissez-en une adaptée.</p>' : ''}
+          <div class="pil-sub2">
+            <label class="pil-check"><input type="checkbox" name="kcbPersoActif"${cfg.culture.kcbPerso ? ' checked' : ''}> Coefficients de transpiration personnalisés (calage local)</label>
+            <div class="pil-fields">
+              <label class="sam-field">Au démarrage<input name="kcbIni" inputmode="decimal" value="${n(cfg.culture.kcbPerso?.ini ?? cl.kcb.ini)}"></label>
+              <label class="sam-field">En pleine végétation<input name="kcbMi" inputmode="decimal" value="${n(cfg.culture.kcbPerso?.mi ?? cl.kcb.mid)}"></label>
+              <label class="sam-field">En fin de saison<input name="kcbFin" inputmode="decimal" value="${n(cfg.culture.kcbPerso?.fin ?? cl.kcb.end)}"></label>
+            </div>
+            <label class="pil-check"><input type="checkbox" name="ajusterClimat"${cfg.culture.ajusterClimat !== false ? ' checked' : ''}> Ajuster les coefficients au vent et à l’humidité du site</label>
           </div>
-          <p class="pil-note">fc = fraction du sol ombragée à midi (ou largeur de haie / inter-rang). Le Kcb du couvert (Éq. 9.10) est à estimer : environ 0,3 à 0,8 selon la densité et l’entretien de l’enherbement.</p>
+          <div class="pil-sub2">
+            <label class="pil-check"><input type="checkbox" name="apActif"${ap.actif ? ' checked' : ''}> Calculer le coefficient de pleine végétation d’après la couverture mesurée</label>
+            <div class="pil-fields">
+              <label class="sam-field">Sol ombragé à midi (%)<input name="apFc" inputmode="decimal" value="${n((ap.fc ?? 0.5) * 100, 0)}"><small class="pil-aide">Ou largeur de la haie ÷ inter-rang.</small></label>
+              <label class="sam-field">Forme<select name="apForme" class="sam-input">${opt('arbres', ap.forme, 'Arbres isolés')}${opt('rangs', ap.forme, 'Rangs (haie fruitière, vigne palissée)')}</select></label>
+              <label class="sam-field">Hauteur de la haie (m)<input name="apHaut" inputmode="decimal" value="${n(ap.hauteurCanopee)}"></label>
+              <label class="sam-field">Largeur de la haie (m)<input name="apLarg" inputmode="decimal" value="${n(ap.largeur)}"></label>
+              <label class="sam-field">Orientation des rangs<select name="apAngle" class="sam-input">${opt(90, ap.angleRang, 'Nord-sud')}${opt(45, ap.angleRang, 'Nord-est / sud-ouest')}${opt(0, ap.angleRang, 'Est-ouest')}</select></label>
+              <label class="sam-field">Densité du feuillage (ML)<input name="apMl" inputmode="decimal" value="${n(ap.ml)}"><small class="pil-aide">1,5 à 2 selon l’espèce.</small></label>
+              <label class="sam-field">Régulation des stomates (Fr)<input name="apFr" inputmode="decimal" value="${n(ap.fr)}"><small class="pil-aide">1 par défaut ; plus faible pour l’olivier ou les agrumes.</small></label>
+              <label class="sam-field">Coefficient de l’enherbement<input name="apCouvert" inputmode="decimal" value="${n(ap.kcbCouvert)}" placeholder="vide : sol nu"><small class="pil-aide">Inter-rang enherbé : environ 0,3 à 0,8 selon la densité et l’entretien.</small></label>
+            </div>
+          </div>
         </details>
       </fieldset>
 
-      <fieldset class="pil-card"><legend>Stades ${annuel ? 'de la culture' : `(année de référence ${anneeDe(cfg.stades.debut)}, reportés sur les autres années)`}</legend>
+      <fieldset class="pil-card"><legend>Dates clés de la saison</legend>
+        ${annuel ? '' : `<p class="pil-aide">Dates de l’année ${anneeDe(cfg.stades.debut)}, reprises chaque année.</p>`}
         <div class="pil-fields">
           ${champsStades.map((k, i) => `<label class="sam-field">${esc(libStades[i])}<input type="date" name="st_${k}" value="${esc(cfg.stades[k])}" required></label>`).join('')}
         </div>
         ${annuel && cult.gdd?.length && cult.temp ? `<div class="pil-gdd">
-          <label class="sam-field">Durées en degrés-jours (${src(cult.gdd[0].src)})<select name="gddType" class="sam-input">${gddOptions}</select></label>
-          <button type="button" class="sam-button" data-action="gdd">Calculer les stades depuis le semis</button>
-          <span class="pil-muted">Tbase ${f1(cult.temp.tbase)} °C, Tsup ${f1(cult.temp.tupper)} °C ${src(cult.temp.src)}. Températures réelles puis celles de l’année précédente au-delà de J+7.</span>
+          <label class="sam-field">Type de culture<select name="gddType" class="sam-input">${gddOptions}</select></label>
+          <button type="button" class="sam-button" data-action="gdd">Calculer les dates avec les températures</button>
+          <small class="pil-aide">À partir de la date de semis, avec les degrés-jours (chaleur cumulée au-dessus de ${f0(cult.temp.tbase)} °C) : températures réelles, puis celles de l’année précédente au-delà de 7 jours.</small>
         </div>` : ''}
-        <p class="pil-note">Dates proposées à titre indicatif : FAO-56 (2025) recommande d’observer les stades sur la parcelle.</p>
+        <p class="pil-note">Dates proposées à titre indicatif : ajustez-les à vos observations sur la parcelle.</p>
         <div class="pil-fields">
-          <label class="sam-field">Début du bilan<input type="date" name="debutBilan" value="${esc(annuel ? (/^\d{4}-/.test(cfg.debutBilan) ? cfg.debutBilan : addDaysISO(cfg.stades.debut, -30)) : debutBilanAffiche(cfg))}"></label>
-          <label class="sam-field">Réserve disponible au début (% RU)<input name="etatInitial" inputmode="decimal" value="${n((cfg.etatInitial ?? 1) * 100, 0)}"></label>
+          <label class="sam-field">Début du calcul<input type="date" name="debutBilan" value="${esc(annuel ? (/^\d{4}-/.test(cfg.debutBilan) ? cfg.debutBilan : addDaysISO(cfg.stades.debut, -30)) : debutBilanAffiche(cfg))}"></label>
+          <label class="sam-field">Réserve au début du calcul (% de la RU)<input name="etatInitial" inputmode="decimal" value="${n((cfg.etatInitial ?? 1) * 100, 0)}"><small class="pil-aide">100 % : sol plein, par exemple après les pluies d’hiver.</small></label>
         </div>
-        ${annuel ? '' : '<p class="pil-note">Pour les cultures pérennes, le bilan démarre chaque année à ce jour et ce mois (sol supposé à la capacité au champ par défaut, à ajuster après un hiver sec).</p>'}
       </fieldset>
 
-      <fieldset class="pil-card"><legend>Sol (tableau 7.5)</legend>
+      <fieldset class="pil-card"><legend>Sol</legend>
         <div class="pil-fields">
-          <label class="sam-field pil-large">Texture<select name="texture" class="sam-input">${SOLS.map(s => opt(s.id, cfg.sol.texture, `${s.nom} (${s.nom_en})`)).join('')}${Object.entries(SOLS_VOISINS).map(([k, v]) => opt(k, cfg.sol.texture, v.note)).join('')}</select></label>
-          <label class="sam-field">θ capacité au champ (m³/m³)<input name="thetaFC" inputmode="decimal" value="${n(cfg.sol.thetaFC, 3)}"></label>
-          <label class="sam-field">θ point de flétrissement (m³/m³)<input name="thetaWP" inputmode="decimal" value="${n(cfg.sol.thetaWP, 3)}"></label>
-          <label class="sam-field">REW (mm)<input name="rew" inputmode="decimal" value="${n(cfg.sol.rew, 1)}"></label>
-          <label class="sam-field">Couche évaporante Ze (m)<input name="ze" inputmode="decimal" value="${n(cfg.sol.ze ?? 0.1)}"></label>
-          <label class="sam-field">RU mesurée (mm/cm)<input name="ruCm" inputmode="decimal" value="${finite(cfg.sol.ruParM) ? n(cfg.sol.ruParM / 100, 2) : ''}" placeholder="vide = θcc − θpf"></label>
+          <label class="sam-field pil-large">Type de sol<select name="texture" class="sam-input">${SOLS.map(s => opt(s.id, cfg.sol.texture, `${s.nom} — RU ≈ ${f1((1000 * (s.thetaFC - s.thetaWP)) / 100)} mm/cm`)).join('')}${Object.entries(SOLS_VOISINS).map(([k, v]) => opt(k, cfg.sol.texture, `${v.nom} — RU ≈ ${f1(ruSol(solParId(k)) / 100)} mm/cm`)).join('')}</select></label>
+          <label class="sam-field">RU mesurée (mm/cm)<input name="ruCm" inputmode="decimal" value="${finite(cfg.sol.ruParM) ? n(cfg.sol.ruParM / 100, 2) : ''}" placeholder="selon le type de sol"><small class="pil-aide">Si elle est connue (analyse, carte des sols).</small></label>
           <label class="sam-field">Cailloux (% du volume)<input name="cailloux" inputmode="decimal" value="${n(cfg.sol.cailloux || 0, 0)}"></label>
         </div>
         <div class="pil-texture">
-          <span class="pil-muted">Depuis une analyse :</span>
+          <span class="pil-aide">Type de sol d’après une analyse :</span>
           <input name="argile" inputmode="decimal" placeholder="% argile" class="sam-input">
           <input name="limon" inputmode="decimal" placeholder="% limon" class="sam-input">
           <input name="sable" inputmode="decimal" placeholder="% sable" class="sam-input">
-          <button type="button" class="sam-button" data-action="texture">Classer (triangle USDA)</button>
+          <button type="button" class="sam-button" data-action="texture">Déterminer</button>
         </div>
-        <p class="pil-ref" id="pil-sol-calc">RU ${f0(ru)} mm/m · TAW ≈ ${f0(taw)} mm sur ${f2(cfg.culture.zr)} m · RAW ≈ ${f0(taw * cfg.culture.p)} mm · TEW ${f1(C.tew(cfg.sol.thetaFC, cfg.sol.thetaWP, cfg.sol.ze ?? 0.1))} mm</p>
+        <p class="pil-ref">Réserve utile : ${f1(ruM / 100)} mm/cm, soit ${f0(ruZone)} mm sur ${f2(cfg.culture.zr)} m d’enracinement · RFU ≈ ${f0(ruZone * cfg.culture.p)} mm</p>
+        <details class="pil-sub"><summary>Réglages avancés du sol</summary>
+          <div class="pil-fields">
+            <label class="sam-field">Humidité à la capacité au champ (m³/m³)<input name="thetaFC" inputmode="decimal" value="${n(cfg.sol.thetaFC, 3)}"></label>
+            <label class="sam-field">Humidité au point de flétrissement (m³/m³)<input name="thetaWP" inputmode="decimal" value="${n(cfg.sol.thetaWP, 3)}"></label>
+            <label class="sam-field">Eau facilement évaporable en surface (mm)<input name="rew" inputmode="decimal" value="${n(cfg.sol.rew, 1)}"></label>
+            <label class="sam-field">Épaisseur de sol qui sèche en surface (m)<input name="ze" inputmode="decimal" value="${n(cfg.sol.ze ?? 0.1)}"><small class="pil-aide">0,10 à 0,15 m.</small></label>
+          </div>
+        </details>
       </fieldset>
 
-      <fieldset class="pil-card"><legend>Irrigation (tableau 7.6)</legend>
+      <fieldset class="pil-card"><legend>Irrigation</legend>
         <div class="pil-fields">
-          <label class="sam-field pil-large">Système<select name="systeme" class="sam-input">${SYSTEMES.map(s => opt(s.id, sys?.id, s.nom)).join('')}</select></label>
-          <label class="sam-field">Fraction humectée fw<input name="fw" inputmode="decimal" value="${n(cfg.irrigation.fw)}"></label>
-          <label class="sam-field">Efficience d’application (%)<input name="efficience" inputmode="decimal" value="${n(cfg.irrigation.efficience * 100, 0)}"></label>
-          <label class="sam-field">Pluviométrie (mm/h)<input name="pluvio" inputmode="decimal" value="${n(cfg.irrigation.pluvio, 3)}" placeholder="pour les durées"></label>
+          <label class="sam-field pil-large">Système d’irrigation<select name="systeme" class="sam-input">${SYSTEMES.map(s => opt(s.id, sys?.id, s.nom)).join('')}</select></label>
+          <label class="sam-field">Efficience du réseau (%)<input name="efficience" inputmode="decimal" value="${n(cfg.irrigation.efficience * 100, 0)}"><small class="pil-aide">Part de l’eau apportée réellement utile aux racines. Valeur proposée à vérifier.</small></label>
+          <label class="sam-field">Pluviométrie (mm/h)<input name="pluvio" inputmode="decimal" value="${n(cfg.irrigation.pluvio, 3)}" placeholder="pour les durées"><small class="pil-aide">Pour convertir les apports en durée de poste.</small></label>
           <label class="sam-field">Durée maximale d’un poste (h)<input name="dureeMaxPoste" inputmode="decimal" value="${n(cfg.irrigation.dureeMaxPoste, 1)}" placeholder="facultatif"></label>
-          <label class="sam-field">Dose nette maximale (mm)<input name="doseMaxNette" inputmode="decimal" value="${n(cfg.irrigation.doseMaxNette, 1)}" placeholder="facultatif"></label>
-          <label class="sam-field">Volume racinaire humecté (%)<input name="fractionHumectee" inputmode="decimal" value="${n((cfg.irrigation.fractionHumectee ?? 1) * 100, 0)}"></label>
         </div>
-        <p class="pil-note">fw tabulé : ${sys ? `${f2(sys.fw[0])} – ${f2(sys.fw[1])}` : '—'} ${src('7.6|236')}. Efficience proposée ${pct(sys?.efficience)} : valeur indicative, à mesurer (Manuel FAO n° 5). Volume humecté &lt; 100 % : ajustement de terrain hors FAO-56, qui réduit la RU prise en compte.</p>
         <details class="pil-sub"><summary>Calculer la pluviométrie</summary>
           <div class="pil-fields">
-            <label class="sam-field">Débit d’un goutteur / diffuseur (L/h)<input name="debitLh" inputmode="decimal" value="${n(loc.debitLh, 2)}"></label>
-            <label class="sam-field">Espacement sur le rang (m)<input name="espacement" inputmode="decimal" value="${n(loc.espacement, 2)}"></label>
+            <label class="sam-field">Débit d’un goutteur ou diffuseur (L/h)<input name="debitLh" inputmode="decimal" value="${n(loc.debitLh, 2)}"></label>
+            <label class="sam-field">Écartement sur le rang (m)<input name="espacement" inputmode="decimal" value="${n(loc.espacement, 2)}"></label>
             <label class="sam-field">Inter-rang (m)<input name="interRang" inputmode="decimal" value="${n(loc.interRang, 2)}"></label>
-            <label class="sam-field">Points par emplacement<input name="parPoint" inputmode="decimal" value="${n(loc.parPoint ?? 1, 0)}"></label>
+            <label class="sam-field">Goutteurs par emplacement<input name="parPoint" inputmode="decimal" value="${n(loc.parPoint ?? 1, 0)}"></label>
           </div>
           <div class="pil-fields">
             <label class="sam-field">ou débit du secteur (m³/h)<input name="debitM3h" inputmode="decimal" value="${n(loc.debitM3h, 2)}"></label>
@@ -935,17 +1085,25 @@ export async function mount(root, ctx) {
           </div>
           <button type="button" class="sam-button" data-action="pluvio">Calculer</button>
         </details>
+        <details class="pil-sub"><summary>Réglages avancés de l’irrigation</summary>
+          <div class="pil-fields">
+            <label class="sam-field">Sol mouillé par l’irrigation (%)<input name="fw" inputmode="decimal" value="${n(cfg.irrigation.fw * 100, 0)}"><small class="pil-aide">Valeur courante pour ce système : ${sys ? `${f0(sys.fw[0] * 100)} à ${f0(sys.fw[1] * 100)} %` : '—'}.</small></label>
+            <label class="sam-field">Apport utile maximal par jour (mm)<input name="doseMaxNette" inputmode="decimal" value="${n(cfg.irrigation.doseMaxNette, 1)}" placeholder="facultatif"></label>
+            <label class="sam-field">Volume de sol humecté (%)<input name="fractionHumectee" inputmode="decimal" value="${n((cfg.irrigation.fractionHumectee ?? 1) * 100, 0)}"><small class="pil-aide">Irrigation localisée : part du volume de racines réellement humecté. 100 % = pas de réduction de la RU.</small></label>
+          </div>
+        </details>
       </fieldset>
 
-      <fieldset class="pil-card"><legend>Stratégie de conseil</legend>
+      <fieldset class="pil-card"><legend>Calcul des apports</legend>
         <div class="pil-fields">
-          <label class="sam-field pil-large">Déclenchement<select name="strategie" class="sam-input">${Object.entries(STRATEGIES).map(([k, v]) => opt(k, cfg.strategie?.mode || 'fao', v)).join('')}</select></label>
-          <label class="sam-field">Seuil personnalisé (% RU)<input name="mad" inputmode="decimal" value="${finite(cfg.strategie?.mad) ? n(cfg.strategie.mad * 100, 0) : ''}"></label>
-          <label class="sam-field">Recompléter jusqu’à<select name="cible" class="sam-input">${opt(1, cfg.strategie?.cible ?? 1, '100 % de la RU')}${opt(0.9, cfg.strategie?.cible ?? 1, '90 % de la RU')}${opt(0.8, cfg.strategie?.cible ?? 1, '80 % de la RU')}</select></label>
-          <label class="sam-field">Pluie prévue prise en compte<select name="pluiePrevue" class="sam-input">${opt(0, cfg.strategie?.pluiePrevue ?? 0.5, '0 % (prudent)')}${opt(0.5, cfg.strategie?.pluiePrevue ?? 0.5, '50 %')}${opt(1, cfg.strategie?.pluiePrevue ?? 0.5, '100 %')}</select></label>
-          <label class="sam-field">Paillage (chap. 10)<select name="paillage" class="sam-input">${opt('aucun', cfg.paillage?.type, 'Aucun')}${opt('plastique', cfg.paillage?.type, 'Film plastique')}${opt('organique', cfg.paillage?.type, 'Organique (paille, broyat)')}</select></label>
-          <label class="sam-field">Surface paillée (%)<input name="couverture" inputmode="decimal" value="${n(cfg.paillage?.couverture || 0, 0)}"></label>
+          <label class="sam-field pil-large">Seuil d’irrigation<select name="strategie" class="sam-input">${Object.entries(SEUILS).map(([k, v]) => opt(k, cfg.strategie?.mode || 'fao', v)).join('')}</select></label>
+          <label class="sam-field">Seuil personnalisé (% de la RU)<input name="mad" inputmode="decimal" value="${finite(cfg.strategie?.mad) ? n(cfg.strategie.mad * 100, 0) : ''}"></label>
+          <label class="sam-field">Remplissage visé<select name="cible" class="sam-input">${opt(1, cfg.strategie?.cible ?? 1, 'Réserve pleine')}${opt(0.9, cfg.strategie?.cible ?? 1, '90 % (place pour la pluie)')}${opt(0.8, cfg.strategie?.cible ?? 1, '80 %')}</select></label>
+          <label class="sam-field">Pluie prévue prise en compte<select name="pluiePrevue" class="sam-input">${opt(0, cfg.strategie?.pluiePrevue ?? 0.5, 'Aucune (prudent)')}${opt(0.5, cfg.strategie?.pluiePrevue ?? 0.5, 'La moitié')}${opt(1, cfg.strategie?.pluiePrevue ?? 0.5, 'Toute')}</select></label>
+          <label class="sam-field">Paillage<select name="paillage" class="sam-input">${opt('aucun', cfg.paillage?.type, 'Aucun')}${opt('plastique', cfg.paillage?.type, 'Film plastique')}${opt('organique', cfg.paillage?.type, 'Paillage organique (paille, broyat)')}</select></label>
+          <label class="sam-field">Part du sol paillée (%)<input name="couverture" inputmode="decimal" value="${n(cfg.paillage?.couverture || 0, 0)}"></label>
         </div>
+        <p class="pil-aide">Le seuil d’irrigation est la quantité d’eau consommée dans la réserve utile à partir de laquelle un apport est calculé. En goutte-à-goutte, le seuil « confort » donne des apports plus fréquents et plus petits.</p>
       </fieldset>
       <div class="pil-actions pil-actions-end"><button type="submit" class="sam-button sam-button-primary">Enregistrer</button></div>
     </form>`;
@@ -971,7 +1129,7 @@ export async function mount(root, ctx) {
     const cult = parId(d.culture_id);
     const annuel = estAnnuel(cult);
     const cu = cfg.culture;
-    cu.p = nv('p', cu.p);
+    cu.p = nv('p', cu.p * 100) / 100;
     cu.h = nv('h', cu.h);
     cu.zr = nv('zr', cu.zr);
     if (annuel) cu.zrMin = nv('zrMin', cu.zrMin);
@@ -980,7 +1138,7 @@ export async function mount(root, ctx) {
     cu.kcbPerso = ck('kcbPersoActif') ? { ini: nv('kcbIni'), mi: nv('kcbMi'), fin: nv('kcbFin') } : null;
     cu.ajusterClimat = ck('ajusterClimat');
     cu.ap = {
-      actif: ck('apActif'), fc: (nv('apFc', 50)) / 100, forme: v('apForme') || 'arbres', hauteurCanopee: nv('apHaut', cu.h),
+      actif: ck('apActif'), fc: nv('apFc', 50) / 100, forme: v('apForme') || 'arbres', hauteurCanopee: nv('apHaut', cu.h),
       largeur: nv('apLarg', 1.5), angleRang: nv('apAngle', 90), ml: nv('apMl', 1.5), fr: nv('apFr', 1), kcbCouvert: nv('apCouvert')
     };
     for (const k of ['debut', 'finIni', 'finDev', 'finMi', 'fin']) cfg.stades[k] = v(`st_${k}`) || cfg.stades[k];
@@ -997,7 +1155,7 @@ export async function mount(root, ctx) {
     cfg.sol.cailloux = Math.min(90, Math.max(0, nv('cailloux', 0)));
     const irr = cfg.irrigation;
     irr.systeme = v('systeme');
-    irr.fw = nv('fw', irr.fw);
+    irr.fw = nv('fw', irr.fw * 100) / 100;
     irr.efficience = nv('efficience', irr.efficience * 100) / 100;
     irr.pluvio = nv('pluvio');
     irr.dureeMaxPoste = nv('dureeMaxPoste');
@@ -1014,27 +1172,22 @@ export async function mount(root, ctx) {
     const e = [];
     const cfg = d.config;
     if (!d.nom) e.push('Donnez un nom à la parcelle.');
-    if (!finite(d.latitude) || Math.abs(d.latitude) > 90 || !finite(d.longitude) || Math.abs(d.longitude) > 180) e.push('Latitude ou longitude invalide.');
-    try { C.stadesDepuisDates(cfg.stades); } catch (error) { e.push(error.message); }
-    if (!(cfg.sol.thetaFC > cfg.sol.thetaWP && cfg.sol.thetaWP >= 0 && cfg.sol.thetaFC < 0.7)) e.push('Sol : θ capacité au champ doit dépasser θ point de flétrissement.');
-    if (!(cfg.culture.p > 0.05 && cfg.culture.p < 0.95)) e.push('La fraction p doit être comprise entre 0,05 et 0,95.');
-    if (!(cfg.culture.zr > 0.05 && cfg.culture.zr <= 5)) e.push('Profondeur racinaire invalide.');
-    if (!(cfg.irrigation.fw > 0 && cfg.irrigation.fw <= 1)) e.push('fw doit être compris entre 0 et 1.');
-    if (!(cfg.irrigation.efficience >= 0.3 && cfg.irrigation.efficience <= 1)) e.push('L’efficience doit être comprise entre 30 et 100 %.');
-    if (cfg.culture.kcbPerso && ['ini', 'mi', 'fin'].some(k => !(cfg.culture.kcbPerso[k] >= 0 && cfg.culture.kcbPerso[k] <= 2))) e.push('Kcb personnalisés invalides.');
+    if (!finite(d.latitude) || Math.abs(d.latitude) > 90 || !finite(d.longitude) || Math.abs(d.longitude) > 180) e.push('Position de la parcelle invalide : choisissez une commune ou saisissez latitude et longitude.');
+    try { C.stadesDepuisDates(cfg.stades); } catch { e.push('Dates de la saison : elles doivent se suivre dans l’ordre.'); }
+    if (!(cfg.sol.thetaFC > cfg.sol.thetaWP && cfg.sol.thetaWP >= 0 && cfg.sol.thetaFC < 0.7)) e.push('Sol : l’humidité à la capacité au champ doit dépasser celle du point de flétrissement.');
+    if (!(cfg.culture.p > 0.05 && cfg.culture.p < 0.95)) e.push('La RFU doit être comprise entre 5 et 95 % de la RU.');
+    if (!(cfg.culture.zr > 0.05 && cfg.culture.zr <= 5)) e.push('Profondeur d’enracinement invalide.');
+    if (!(cfg.irrigation.fw > 0 && cfg.irrigation.fw <= 1)) e.push('Sol mouillé par l’irrigation : entre 1 et 100 %.');
+    if (!(cfg.irrigation.efficience >= 0.3 && cfg.irrigation.efficience <= 1)) e.push('L’efficience du réseau doit être comprise entre 30 et 100 %.');
+    if (cfg.culture.kcbPerso && ['ini', 'mi', 'fin'].some(k => !(cfg.culture.kcbPerso[k] >= 0 && cfg.culture.kcbPerso[k] <= 2))) e.push('Coefficients personnalisés invalides (entre 0 et 2).');
     if (cfg.strategie.mode === 'perso' && !(cfg.strategie.mad > 0.02 && cfg.strategie.mad < 0.95)) e.push('Seuil personnalisé : entre 2 et 95 % de la RU.');
-    if (cfg.culture.ap?.actif && !(cfg.culture.ap.fc > 0 && cfg.culture.ap.fc <= 1)) e.push('A&P : couverture fc entre 1 et 100 %.');
+    if (cfg.culture.ap?.actif && !(cfg.culture.ap.fc > 0 && cfg.culture.ap.fc <= 1)) e.push('Sol ombragé à midi : entre 1 et 100 %.');
     return e;
   }
 
   function lierFormulaire() {
     const f = $('#pil-form');
     const rafraichir = () => { lireFormulaire(); renderParcelle(); };
-    f.elements.famille.addEventListener('change', () => {
-      lireFormulaire();
-      const cult = CULTURES.find(c => c.famille === f.elements.famille.value);
-      changerCulture(cult);
-    });
     f.elements.culture_id.addEventListener('change', () => { lireFormulaire(); changerCulture(parId(f.elements.culture_id.value)); });
     f.elements.classe_id.addEventListener('change', () => {
       lireFormulaire();
@@ -1049,20 +1202,20 @@ export async function mount(root, ctx) {
     f.elements.texture.addEventListener('change', () => {
       lireFormulaire();
       const s = solParId(f.elements.texture.value);
-      Object.assign(S.brouillon.config.sol, { thetaFC: s.thetaFC, thetaWP: s.thetaWP, rew: s.rewDefaut });
+      Object.assign(S.brouillon.config.sol, { thetaFC: s.thetaFC, thetaWP: s.thetaWP, rew: s.rewDefaut, ruParM: null });
       renderParcelle();
     });
     f.elements.systeme.addEventListener('change', () => {
       lireFormulaire();
       const s = systemeParId(f.elements.systeme.value);
       Object.assign(S.brouillon.config.irrigation, { fw: s.fwDefaut, efficience: s.efficience });
-      // Irrigation localisée : apports fréquents, seuil « confort » par défaut (modifiable)
+      // Irrigation localisée : seuil « confort » par défaut (apports fréquents), modifiable
       const st = S.brouillon.config.strategie;
       if (s.frequent && st.mode === 'fao') st.mode = 'confort';
       else if (!s.frequent && st.mode === 'confort') st.mode = 'fao';
       renderParcelle();
     });
-    for (const name of ['thetaFC', 'thetaWP', 'zr', 'p', 'ruCm', 'cailloux', 'fractionHumectee', 'ze']) {
+    for (const name of ['thetaFC', 'thetaWP', 'zr', 'p', 'ruCm', 'cailloux', 'fractionHumectee']) {
       f.elements[name]?.addEventListener('change', rafraichir);
     }
     // Recherche de commune
@@ -1101,7 +1254,7 @@ export async function mount(root, ctx) {
         S.brouillon = null;
         ctx.ui.toast('Parcelle enregistrée');
         S.id = row.id;
-        S.onglet = 'conseil';
+        S.onglet = 'bilan';
         storage.set('pilotage.onglet', S.onglet);
         await chargerParcelles();
         await ouvrir(row.id);
@@ -1162,10 +1315,10 @@ export async function mount(root, ctx) {
         }
       }
       const r = C.stadesDepuisDegresJours(semis, g, serie, cult.temp.tbase, cult.temp.tupper);
-      if (!r.fin) { msg.textContent = `Données insuffisantes : ${f0(r.cumul)} °C·j cumulés sur ${f0(g.total)}.`; return; }
+      if (!r.fin) { msg.textContent = `Données insuffisantes : ${f0(r.cumul)} degrés-jours cumulés sur ${f0(g.total)}.`; return; }
       Object.assign(d.config.stades, { finIni: r.finIni, finDev: r.finDev, finMi: r.finMi, fin: r.fin });
       renderParcelle();
-      $('#pil-form-msg').textContent = `Stades calculés (${g.type}, ${f0(g.total)} °C·j) : à vérifier sur le terrain, puis enregistrer.`;
+      $('#pil-form-msg').textContent = `Dates calculées (${g.type}, ${f0(g.total)} degrés-jours) : à vérifier sur le terrain, puis enregistrer.`;
     } catch (error) {
       msg.textContent = error.message || 'Calcul impossible.';
       msg.classList.add('is-error');
@@ -1184,7 +1337,7 @@ export async function mount(root, ctx) {
     zone.innerHTML = S.anciennes.length
       ? `<ul class="pil-anciennes">${S.anciennes.map(a => `<li><span><b>${esc(a.name)}</b> <small>${esc(a.location_name || '')}</small></span>
           ${deja.has(a.id) ? '<span class="pil-muted">déjà reprise</span>' : `<button type="button" class="sam-button" data-action="reprendre" data-id="${esc(a.id)}">Reprendre</button>`}</li>`).join('')}</ul>`
-      : '<p class="pil-muted">Aucune parcelle dans le Bilan hydrique pour ce compte.</p>';
+      : '<p class="pil-muted">Aucune parcelle dans l’ancien Bilan hydrique pour ce compte.</p>';
   }
 
   async function reprendre(id) {
@@ -1200,6 +1353,7 @@ export async function mount(root, ctx) {
     if (finite(Number(a.p_factor))) cfg.culture.p = Number(a.p_factor);
     const sys = systemeParId(a.irrigation_system === 'sprinkler' ? 'aspersion-verger' : 'goutte-a-goutte');
     Object.assign(cfg.irrigation, { systeme: sys.id, fw: sys.fwDefaut, efficience: sys.efficience });
+    cfg.strategie.mode = sys.frequent ? 'confort' : 'fao';
     cfg.debutBilan = '10-01';
     if (a.use_custom_kc && finite(Number(a.kc_mid))) {
       cfg.methode = 'simple';
@@ -1215,7 +1369,7 @@ export async function mount(root, ctx) {
         parcelle_id: row.id, jour: r.irrigation_date, dose_brute_mm: Number(r.amount_mm), saisie: { unite: 'mm', valeur: Number(r.amount_mm) }, note: 'Reprise Bilan hydrique'
       })));
       await store.enregistrerPluies(old.pluies.map(r => ({ parcelle_id: row.id, jour: r.rain_date, pluie_mm: Number(r.amount_mm) })));
-      ctx.ui.toast(`« ${a.name} » reprise : vérifiez la classe FAO et les stades`);
+      ctx.ui.toast(`« ${a.name} » reprise : vérifiez la conduite et les dates de la saison`);
       S.brouillon = null;
       S.id = row.id;
       S.onglet = 'parcelle';
@@ -1227,50 +1381,58 @@ export async function mount(root, ctx) {
   }
 
   // ---------------------------------------------------------------------------
-  // Onglet Référentiel FAO-56 (2025)
+  // Onglet Aide
   // ---------------------------------------------------------------------------
-  function renderReferentiel() {
+  function renderAide() {
     const choix = storage.get('pilotage.refCulture', 'pommier');
     const cult = parId(choix) || CULTURES[0];
-    const fam = Object.entries(FAMILLES);
-    panel.innerHTML = `<div class="pil-card">
-      <div class="pil-card-head"><h3>Cultures — valeurs FAO-56 Rev.1 (2025)</h3>
-        <select id="pil-ref-culture" class="sam-input">${fam.map(([k, v]) => `<optgroup label="${esc(v)}">${CULTURES.filter(c => c.famille === k).map(c => `<option value="${c.id}"${c.id === cult.id ? ' selected' : ''}>${esc(c.nom)}</option>`).join('')}</optgroup>`).join('')}</select>
-      </div>
-      <p><b>${esc(cult.nom)}</b> <i>${esc(cult.latin || '')}</i> · p ${cult.p?.p != null ? f2(cult.p.p) : esc(cult.p?.txt || '—')} ${cult.p?.src ? src(cult.p.src) : ''}${cult.p?.p_intensif ? ` (intensif ${f2(cult.p.p_intensif)})` : ''}
-        ${cult.temp ? ` · Tbase ${f1(cult.temp.tbase)} °C, Tsup ${f1(cult.temp.tupper)} °C ${src(cult.temp.src)}` : ''}
-        ${cult.sel ? ` · salinité : ${esc(SALINITE[cult.sel.rating] || cult.sel.rating || '')}${cult.sel.ece_t != null ? `, ECe seuil ${f1(cult.sel.ece_t)} dS/m, pente ${f1(cult.sel.b)} %/dS/m` : cult.sel.txt && cult.sel.txt !== '-' ? `, ECe seuil ${esc(cult.sel.txt)} dS/m` : ''} ${src(cult.sel.src)}` : ''}</p>
+    const especes = Object.entries(FAMILLES).map(([k, v]) => {
+      const liste = CULTURES.filter(c => c.famille === k);
+      return liste.length ? `<optgroup label="${esc(v)}">${liste.map(c => `<option value="${c.id}"${c.id === cult.id ? ' selected' : ''}>${esc(c.nom)}</option>`).join('')}</optgroup>` : '';
+    }).join('');
+    const lexique = [
+      ['ET₀ (évapotranspiration de référence)', 'Eau évaporée en un jour par un gazon bien alimenté en eau. Elle traduit la demande du climat : chaleur, soleil, vent, air sec.'],
+      ['ETc (consommation de la culture)', 'Eau consommée par la culture : ET₀ × coefficient cultural, réduite en cas de manque d’eau.'],
+      ['Kc (coefficient cultural)', 'Rapport entre la consommation de la culture et l’ET₀. Il évolue au cours de la saison avec le développement du feuillage.'],
+      ['RU (réserve utile)', 'Eau que le sol retient sur la profondeur des racines et que la culture peut prélever, de la capacité au champ jusqu’au point de flétrissement.'],
+      ['RFU (réserve facilement utilisable)', 'Partie de la RU que la culture prélève sans difficulté. Au-delà, elle ferme ses stomates et transpire moins.'],
+      ['Seuil d’irrigation', 'Quantité d’eau consommée dans la RU à partir de laquelle l’outil calcule un apport : la RFU (standard) ou la moitié de la RFU (confort).'],
+      ['Stress hydrique', 'Manque d’eau qui réduit la transpiration de la culture. L’outil indique de combien elle est réduite.'],
+      ['Apport calculé', 'Quantité d’eau qui, selon le calcul, ramènerait la réserve au remplissage visé (eau sortie du réseau). La part utile aux racines dépend de l’efficience.'],
+      ['Efficience du réseau', 'Part de l’eau apportée qui reste utile aux racines (pertes par ruissellement, percolation, défaut d’uniformité).'],
+      ['Pluviométrie', 'Lame d’eau apportée en une heure par le réseau (mm/h). Elle convertit les apports en durée de poste.'],
+      ['Conduite', 'Âge, forme et densité de plantation, développement du feuillage. Elle fixe les coefficients de la culture.'],
+      ['Degrés-jours', 'Chaleur cumulée au-dessus d’une température de base. Ils servent à estimer les dates des stades des cultures annuelles.'],
+      ['Prévision', 'De aujourd’hui à J+7, le calcul utilise les prévisions météo ; la pluie prévue n’est comptée qu’en partie.']
+    ];
+    panel.innerHTML = `<div class="pil-card"><h3>Lire le bilan</h3>
+      <p>Chaque jour, l’outil compte l’eau qui entre dans le sol (pluie, irrigation) et celle qui en sort (consommation de la culture, évaporation, drainage). Il en déduit l’eau encore disponible pour les racines. Quand cette réserve descend jusqu’au seuil d’irrigation, il calcule l’apport qui la remplirait de nouveau.</p>
+      <p>Les résultats sont des estimations : à confronter à l’observation de la culture et aux mesures de terrain (sondes, tensiomètres). La décision d’irriguer revient à l’exploitant.</p></div>
+    <div class="pil-card"><h3>Lexique</h3><dl class="pil-lexique">${lexique.map(([t, d]) => `<dt>${esc(t)}</dt><dd>${esc(d)}</dd>`).join('')}</dl></div>
+    <div class="pil-card">
+      <div class="pil-card-head"><h3>Espèces et conduites</h3><select id="pil-aide-espece" class="sam-input">${especes}</select></div>
+      <p><b>${esc(cult.nom)}</b> ${cult.latin ? `<i>${esc(cult.latin)}</i>` : ''}${finite(cult.p?.p) ? ` · RFU : ${f0(cult.p.p * 100)} % de la RU` : ''}${cult.temp ? ` · croissance au-dessus de ${f0(cult.temp.tbase)} °C` : ''}</p>
       <div class="pil-table-wrap"><table class="pil-table">
-        <thead><tr><th>Classe</th><th>fc</th><th>h (m)</th><th>Zr (m)</th><th>Kcb ini</th><th>Kcb mi</th><th>Kcb fin</th><th>Kc ini</th><th>Kc mi</th><th>Kc fin</th><th>A&amp;P (mi-saison)</th></tr></thead>
+        <thead><tr><th>Conduite</th><th>Sol ombragé</th><th>Hauteur (m)</th>${estAnnuel(cult) ? '<th>Enracinement (m)</th>' : ''}<th>Kc démarrage</th><th>Kc pleine végétation</th><th>Kc fin de saison</th></tr></thead>
         <tbody>${cult.classes.map(c => {
-          const apMid = Array.isArray(c.ap) ? c.ap.find(a => /mid/i.test(a.stade)) : null;
-          return `<tr><td>${esc(c.nom)}<br><small class="pil-muted">${esc(c.nom_en || '')}</small></td><td>${plage(c.fc)}</td><td>${plage(c.h, 1)}</td><td>${plage(c.zr, 1)}</td>
-            <td>${f2(c.kcb.ini)}</td><td>${f2(c.kcb.mid)}</td><td>${f2(c.kcb.end)} ${src(c.kcb.src)}</td>
-            <td>${c.kc ? f2(c.kc.ini) : '—'}</td><td>${c.kc ? f2(c.kc.mid) : '—'}</td><td>${c.kc ? `${f2(c.kc.end)} ${src(c.kc.src)}` : '—'}</td>
-            <td>${apMid ? `fc ${plage(apMid.fc)} · h ${plage(apMid.h, 1)} · ML ${finite(apMid.ML) ? f1(apMid.ML) : '—'}${apMid.Fr ? ` · Fr ${f2(apMid.Fr)}` : ''} ${src(apMid.src)}` : '—'}</td></tr>`;
+          const k = c.kc || { ini: c.kcb.ini + 0.05, mid: c.kcb.mid + 0.05, end: c.kcb.end + 0.05 };
+          return `<tr><td>${esc(c.nom)}</td><td>${c.fc ? `${plage(c.fc, 0, 100)} %` : '—'}</td><td>${plage(c.h)}</td>${estAnnuel(cult) ? `<td>${plage(c.zr)}</td>` : ''}<td>${f2(k.ini)}</td><td>${f2(k.mid)}</td><td>${f2(k.end)}</td></tr>`;
         }).join('')}</tbody></table></div>
-      ${cult.gdd?.length ? `<h4>Durée des stades en degrés-jours (°C·j)</h4><div class="pil-table-wrap"><table class="pil-table"><thead><tr><th>Type</th><th>Initial</th><th>Développement</th><th>Mi-saison</th><th>Fin</th><th>Total</th></tr></thead>
-        <tbody>${cult.gdd.map(g => `<tr><td>${esc(g.type)}</td><td>${f0(g.ini)}</td><td>${f0(g.dev)}</td><td>${f0(g.mid)}</td><td>${f0(g.late)}</td><td>${f0(g.total)} ${src(g.src)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-      ${cult.note ? `<p class="pil-note">${esc(cult.note)}</p>` : ''}
+      ${cult.gdd?.length ? `<p class="pil-muted">Durée de la saison en degrés-jours : ${cult.gdd.map(g => `${esc(g.type)} ${f0(g.total)}`).join(' ; ')}.</p>` : ''}
     </div>
     <div class="pil-grid pil-grid-2">
-      <div class="pil-card"><h3>Sols types (tableau 7.5)</h3><div class="pil-table-wrap"><table class="pil-table">
-        <thead><tr><th>Texture</th><th>θcc</th><th>θpf</th><th>RU (mm/m)</th><th>REW</th><th>TEW (Ze 0,10)</th></tr></thead>
-        <tbody>${SOLS.map(s => `<tr><td>${esc(s.nom)}<br><small class="pil-muted">${esc(s.nom_en)}</small></td><td>${f2(s.fc[0])} – ${f2(s.fc[1])}</td><td>${f2(s.wp[0])} – ${f2(s.wp[1])}</td><td>${f0(1000 * (s.thetaFC - s.thetaWP))}</td><td>${f0(s.rew[0])} – ${f0(s.rew[1])}</td><td>${f0(s.tew[0])} – ${f0(s.tew[1])}</td></tr>`).join('')}</tbody>
-      </table></div><p class="pil-muted">${esc(SOLS[0].src)}</p></div>
-      <div class="pil-card"><h3>Systèmes d’irrigation (tableau 7.6)</h3><div class="pil-table-wrap"><table class="pil-table">
-        <thead><tr><th>Système</th><th>fw</th><th>Efficience indicative</th></tr></thead>
-        <tbody>${SYSTEMES.map(s => `<tr><td>${esc(s.nom)}</td><td>${f2(s.fw[0])}${s.fw[1] !== s.fw[0] ? ` – ${f2(s.fw[1])}` : ''}</td><td>${pct(s.efficience)}</td></tr>`).join('')}</tbody>
-      </table></div><p class="pil-muted">fw : ${esc(SYSTEMES[0].src)}. Efficience : ${esc(SYSTEMES[0].srcEfficience)}.</p></div>
+      <div class="pil-card"><h3>Types de sol</h3><div class="pil-table-wrap"><table class="pil-table">
+        <thead><tr><th>Type de sol</th><th>RU (mm/cm)</th><th>RU (mm/m)</th></tr></thead>
+        <tbody>${SOLS.map(s => `<tr><td>${esc(s.nom)}</td><td>${f1((1000 * (s.thetaFC - s.thetaWP)) / 100)}</td><td>${f0(1000 * (s.thetaFC - s.thetaWP))}</td></tr>`).join('')}</tbody>
+      </table></div><p class="pil-muted">Valeurs moyennes ; une RU mesurée sur la parcelle est toujours préférable.</p></div>
+      <div class="pil-card"><h3>Systèmes d’irrigation</h3><div class="pil-table-wrap"><table class="pil-table">
+        <thead><tr><th>Système</th><th>Sol mouillé</th><th>Efficience indicative</th></tr></thead>
+        <tbody>${SYSTEMES.map(s => `<tr><td>${esc(s.nom)}</td><td>${f0(s.fw[0] * 100)}${s.fw[1] !== s.fw[0] ? ` à ${f0(s.fw[1] * 100)}` : ''} %</td><td>${pct(s.efficience)}</td></tr>`).join('')}</tbody>
+      </table></div><p class="pil-muted">L’efficience réelle dépend de l’état du réseau : à vérifier.</p></div>
     </div>
-    <div class="pil-card"><h3>Paillages (tableaux 10.1 et 10.2) — réductions en %</h3><div class="pil-table-wrap"><table class="pil-table">
-      <thead><tr><th>Cultures / paramètre</th><th>Paillage</th><th>Début</th><th>Mi-saison</th><th>Fin</th></tr></thead>
-      <tbody>${PAILLAGE_KC.map(r => `<tr><td>${esc(r.cultures)} (Kc)</td><td>${esc(r.paillage)}</td><td>${r.debut.join(' – ')}</td><td>${r.mi.join(' – ')}</td><td>${r.fin.join(' – ')}</td></tr>`).join('')}
-        ${PAILLAGE_ES.map(r => `<tr><td>${esc(r.parametre === 'Es' ? 'Évaporation du sol (Es)' : 'Kc')}</td><td>${esc(r.paillage)}</td><td>${r.debut ? r.debut.join(' – ') : '—'}</td><td>${r.mi ? r.mi.join(' – ') : '—'}</td><td>${r.fin ? r.fin.join(' – ') : '—'}</td></tr>`).join('')}</tbody>
-    </table></div><p class="pil-muted">${esc(PAILLAGE_KC[0].src)} ; ${esc(PAILLAGE_ES[0].src)}</p></div>
-    <div class="pil-card"><h3>Référence</h3><p>${esc(REFERENCE)}</p>
-      <p class="pil-muted">Chaque coefficient affiché dans l’outil indique son tableau et sa page. Les valeurs « par défaut de terrain » (profondeur racinaire des ligneux, efficience, dates de stades, volume humecté) ne viennent pas de FAO-56 et sont signalées comme telles.</p></div>`;
-    $('#pil-ref-culture').addEventListener('change', e => { storage.set('pilotage.refCulture', e.target.value); renderReferentiel(); });
+    <div class="pil-card"><h3>Méthode</h3>
+      <p>Les calculs suivent la méthode FAO-56 de l’Organisation des Nations unies pour l’alimentation et l’agriculture (édition 2025), référence internationale pour les besoins en eau des cultures. La profondeur d’enracinement des arbres et de la vigne, l’efficience du réseau, les dates de saison proposées et le volume de sol humecté ne viennent pas de cette méthode : ce sont des valeurs par défaut à ajuster.</p></div>`;
+    $('#pil-aide-espece').addEventListener('change', e => { storage.set('pilotage.refCulture', e.target.value); renderAide(); });
   }
 
   // ---------------------------------------------------------------------------
@@ -1302,11 +1464,24 @@ export async function mount(root, ctx) {
       } else if (action === 'reprendre') {
         btn.disabled = true;
         await reprendre(btn.dataset.id);
+      } else if (action === 'importer') {
+        btn.disabled = true;
+        await importer();
+      } else if (action === 'annuler-import') {
+        S.importLignes = null;
+        renderSaisies();
       } else if (action === 'suppr-irr') {
         await store.supprimerIrrigations([btn.dataset.id]);
         S.irrigations = await store.irrigations(S.id);
         renderSaisies();
         calculer();
+      } else if (action === 'suppr-toutes-irr') {
+        if (window.confirm(`Supprimer les ${S.irrigations.length} irrigations enregistrées pour cette parcelle ?`)) {
+          await store.supprimerIrrigations(S.irrigations.map(r => r.id));
+          S.irrigations = await store.irrigations(S.id);
+          renderSaisies();
+          calculer();
+        }
       } else if (action === 'suppr-pluie') {
         await store.supprimerPluie(btn.dataset.id);
         S.pluies = await store.pluies(S.id);
@@ -1318,7 +1493,7 @@ export async function mount(root, ctx) {
           await store.supprimerParcelle(p.id);
           S.brouillon = null;
           await chargerParcelles();
-          S.onglet = 'conseil';
+          S.onglet = 'bilan';
           if (S.id) await ouvrir(S.id); else render();
         }
       } else if (action === 'dupliquer') {
@@ -1340,15 +1515,15 @@ export async function mount(root, ctx) {
         if (!t) { $('#pil-form-msg').textContent = 'Renseignez les trois fractions (%).'; return; }
         lireFormulaire();
         const sol = solParId(t);
-        Object.assign(S.brouillon.config.sol, { texture: t, thetaFC: sol.thetaFC, thetaWP: sol.thetaWP, rew: sol.rewDefaut });
+        Object.assign(S.brouillon.config.sol, { texture: t, thetaFC: sol.thetaFC, thetaWP: sol.thetaWP, rew: sol.rewDefaut, ruParM: null });
         renderParcelle();
-        $('#pil-form-msg').textContent = SOLS_VOISINS[t] ? SOLS_VOISINS[t].note : `Texture : ${sol.nom}.`;
+        $('#pil-form-msg').textContent = `Type de sol : ${nomSol(t)}.`;
       } else if (action === 'pluvio') {
         const d = lireFormulaire();
         const l = d.config.irrigation.localise;
         const v = IR.pluviometrieLocalisee({ debitLh: l.debitLh, espacement: l.espacement, interRang: l.interRang, parPoint: l.parPoint || 1 })
           ?? IR.pluviometrieAspersion({ debitM3h: l.debitM3h, surfaceHa: l.surfaceSecteur });
-        if (!finite(v)) { $('#pil-form-msg').textContent = 'Renseignez débit, espacement et inter-rang (ou débit et surface du secteur).'; return; }
+        if (!finite(v)) { $('#pil-form-msg').textContent = 'Renseignez le débit, l’écartement et l’inter-rang (ou le débit et la surface du secteur).'; return; }
         d.config.irrigation.pluvio = +v.toFixed(3);
         renderParcelle();
         $('#pil-form-msg').textContent = `Pluviométrie : ${f2(v)} mm/h.`;

@@ -10,14 +10,16 @@ import { profile } from './profile.js';
 import { stationStore, stationState } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-18.1';
+const APP_VERSION = '2026-11-18.2';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
   { id: 'irrigation', title: 'SAM Programmation irrigation', card: 'Program&shy;mation <br>irrigation', icon: 'toolIrrigation' },
-  { id: 'bilan', title: 'SAM Bilan hydrique', card: 'Bilan <br>hydrique', icon: 'toolBilan' },
-  // Aperçu : visible des seuls administrateurs SAM tant que l'outil n'est pas validé.
-  { id: 'pilotage', title: 'SAM Pilotage irrigation', card: 'Pilotage <br>irrigation', icon: 'toolBilan', preview: true },
+  // Remplacé par « Bilan irrigation » : masqué dès que celui-ci est visible (équipe aujourd'hui, tous à l'ouverture).
+  { id: 'bilan', title: 'SAM Bilan hydrique', card: 'Bilan <br>hydrique', icon: 'toolBilan', replacedBy: 'pilotage' },
+  // Aperçu : visible des seuls administrateurs SAM tant que l'outil n'est pas ouvert à tous
+  // (retirer « preview » pour l'ouvrir : l'ancien Bilan hydrique disparaît alors pour tout le monde).
+  { id: 'pilotage', title: 'SAM Bilan irrigation', card: 'Bilan <br>irrigation', icon: 'toolBilan', preview: true },
   { id: 'phenologie', title: 'SAM Suivi phénologique', card: 'Suivi <br>phéno&shy;logique', icon: 'toolPheno', admin: true },
   { id: 'tavelure', title: 'SAM Tavelure', card: 'Tavelure', icon: 'toolTavelure', admin: true },
   { id: 'piegeage', title: 'SAM Piégeage', card: 'Piégeage', icon: 'toolPiegeage', admin: true }
@@ -278,7 +280,15 @@ async function handleLogout() {
 // Cartes des outils
 // ---------------------------------------------------------------------------
 /** Outils en aperçu (preview) : réservés aux administrateurs. */
-const toolVisible = tool => !tool.preview || Boolean(auth.isAdmin);
+function toolVisible(tool) {
+  if (tool.preview && !auth.isAdmin) return false;
+  // Outil remplacé : masqué dès que son remplaçant est visible pour ce compte.
+  if (tool.replacedBy) {
+    const next = TOOLS.find(t => t.id === tool.replacedBy);
+    if (next && toolVisible(next)) return false;
+  }
+  return true;
+}
 
 function renderToolCards(activeId) {
   $('sam-tools').innerHTML = TOOLS.filter(toolVisible).map(tool => `
@@ -565,6 +575,13 @@ function routeFromHash() {
   return TOOLS.find(t => t.id === id && toolVisible(t)) || SECTIONS.find(t => t.id === id) || HIDDEN_TOOLS.find(t => t.id === id) || null;
 }
 
+/** Outil qui remplace un outil masqué (ancien lien ou dernier outil mémorisé), s'il est visible. */
+function replacementOf(id) {
+  const old = TOOLS.find(t => t.id === id);
+  const next = old?.replacedBy ? TOOLS.find(t => t.id === old.replacedBy) : null;
+  return next && toolVisible(next) ? next.id : null;
+}
+
 function applyLayout(tool) {
   const withSidebar = tool.sidebar === 'stations';
   $('sam-app').classList.toggle('has-sidebar', withSidebar);
@@ -653,8 +670,9 @@ function handleRoute() {
   if (!tool) {
     // Outil inconnu ou réservé (aperçu) : retour au dernier outil accessible.
     const last = storage.get('lastTool', DEFAULT_TOOL);
+    const asked = (window.location.hash || '').replace(/^#\/?/, '').split(/[/?]/)[0];
     const ok = TOOLS.some(t => t.id === last && toolVisible(t));
-    window.location.replace(`#/${ok ? last : DEFAULT_TOOL}`);
+    window.location.replace(`#/${replacementOf(asked) || (ok ? last : replacementOf(last) || DEFAULT_TOOL)}`);
     return;
   }
   if (TOOLS.includes(tool)) storage.set('lastTool', tool.id);
