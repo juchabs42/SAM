@@ -108,7 +108,7 @@ export async function mount(root, ctx) {
 
   // Une station pas encore installée n'a pas de données : seuls les administrateurs l'ouvrent
   // (pour compléter sa fiche).
-  const canOpen = station => station.installee !== false || ctx.isAdmin;
+  const canOpen = station => station.installee !== false || ctx.isFullAdmin;
 
   // Station RIMpro : ouvre directement l'onglet « Maladies / ravageurs » (modèles RIMpro)
   // des Données ; les autres stations n'ont pas cet onglet utile, on évite donc d'y arriver.
@@ -351,7 +351,7 @@ export async function mount(root, ctx) {
     $('carteAdmin').textContent = missing.length
       ? `Sans coordonnées, donc absentes de la carte : ${missing.map(s => s.nom).join(', ')}. Les coordonnées se saisissent dans la « Fiche station » de l’onglet Données.`
       : '';
-    $('carteAdmin').classList.toggle('hidden', !ctx.isAdmin || !missing.length);
+    $('carteAdmin').classList.toggle('hidden', !ctx.isFullAdmin || !missing.length);
   }
 
   async function refresh(force = false) {

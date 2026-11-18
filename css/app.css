@@ -881,3 +881,78 @@ body.is-gated { background: var(--sam-red-900); }
   .sam-top-item { padding: 0 7px; }
   .sam-app:not(.has-sidebar) .sam-top-brand img { height: 28px; }
 }
+
+/* Bouton « Agrandir » des graphiques (à côté du CSV, ou dans le coin du graphique) */
+.tool-root button.sam-expand-button { padding: 0 8px; }
+.tool-root button.sam-expand-button[hidden] { display: none; }
+.tool-root .sam-expand-pair { display: inline-flex; flex: none; align-items: center; gap: 6px; }
+.tool-root button.sam-expand-button svg { width: 16px; height: 16px; }
+.tool-root button.sam-expand-button.is-corner {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  min-height: 30px;
+  background: rgba(255, 255, 255, .95);
+  box-shadow: 0 2px 8px rgba(17, 24, 39, .14);
+}
+.tool-root .sam-has-expand-corner > button.sam-zoom-reset { right: 46px; }
+
+/* Graphique en pleine page */
+html.sam-expand-open, html.sam-expand-open body { overflow: hidden; }
+.tool-root .sam-chart-expanded {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1000 !important;
+  box-sizing: border-box !important;
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: calc(64px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  overflow: hidden !important;
+}
+.tool-root .sam-chart-expanded > canvas.sam-expand-free { width: 100% !important; height: 100% !important; }
+.tool-root .sam-chart-expanded > .sam-expand-button { display: none; }
+.tool-root .sam-chart-expanded > button.sam-zoom-reset { top: calc(70px + env(safe-area-inset-top)); right: 16px; }
+.tool-root .sam-expand-head {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: env(safe-area-inset-top) 16px 0;
+  border-bottom: 1px solid var(--sam-line);
+  background: #fff;
+}
+.tool-root .sam-expand-head strong { min-width: 0; overflow: hidden; color: var(--sam-ink); font-size: 1rem; text-overflow: ellipsis; white-space: nowrap; }
+.tool-root .sam-expand-head button.sam-expand-back {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 4px;
+  width: auto;
+  min-width: 0;
+  min-height: 38px;
+  margin: 0;
+  padding: 0 14px 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--sam-red-700);
+  color: #fff;
+  box-shadow: none;
+  font: inherit;
+  font-size: .9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tool-root .sam-expand-head button.sam-expand-back svg { width: 18px; height: 18px; }

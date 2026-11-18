@@ -61,9 +61,9 @@ export async function mount(root, ctx) {
   const state = { oldClient: null, data: null, copied: {}, errors: {}, newCounts: {} };
 
   function renderGate() {
-    if (ctx.isAdmin) return false;
+    if (ctx.isFullAdmin) return false;
     root.innerHTML = `<div class="tool-main mig"><section class="mig-card">
-      <h2>Réservé aux administrateurs</h2>
+      <h2>Réservé aux « full admin »</h2>
       <p class="mig-text">Connecte-toi avec un compte administrateur SAM (bouton « Connexion » en haut à droite) pour copier les données de l’ancienne appli SAM Piégeage.</p>
       <button class="mig-button is-primary" type="button" id="migOpenLogin">Connexion</button>
     </section></div>`;

@@ -2,12 +2,16 @@
 // SAM Outils · Fonction Supabase « sam-admin » : gestion des comptes
 // -----------------------------------------------------------------------------
 // Utilisée par l'onglet « Administration » du site (administrateurs SAM uniquement) :
-// liste des comptes, invitation, droits administrateur, suspension, suppression.
+// liste des comptes, invitation, rôles, suspension, suppression.
+// Réservée aux « full admin » (sam_admins.niveau = 'full').
+//
+// Rôles : 'normal' (lecture, absent de sam_admins), 'admin' (saisie Phénologie,
+// Tavelure, Piégeage), 'full' (tout : comptes, stations, capteurs).
 //
 // Déploiement (une seule fois) : Supabase > Edge Functions > Deploy a new function >
 // Via Editor, nom « sam-admin », coller ce fichier, Deploy. Puis, dans les réglages de
 // la fonction, désactiver « Verify JWT » : la fonction vérifie elle-même le compte
-// appelant (connexion + présence dans public.sam_admins).
+// appelant (connexion + niveau « full » dans public.sam_admins).
 //
 // La clé d'administration (service_role / secret) est fournie automatiquement par
 // Supabase à la fonction : elle n'apparaît ni dans le site, ni sur GitHub.
@@ -54,15 +58,16 @@ Deno.serve(async (req: Request) => {
     if (!url) throw new Refus('Adresse Supabase introuvable.', 500);
     const admin = createClient(url, adminKey(), { auth: { persistSession: false, autoRefreshToken: false } });
 
-    // 1. Compte appelant : connecté, adresse confirmée, inscrit dans sam_admins.
+    // 1. Compte appelant : connecté, adresse confirmée, « full admin ».
     const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
     const { data: who, error: whoError } = await admin.auth.getUser(jwt);
     const me = who?.user;
     if (whoError || !me?.email || !me.email_confirmed_at) throw new Refus('Connexion requise.', 401);
     const myEmail = me.email.toLowerCase();
-    const { data: isAdmin, error: adminError } = await admin.from('sam_admins').select('email').eq('email', myEmail).maybeSingle();
+    const { data: mine, error: adminError } = await admin.from('sam_admins').select('*').eq('email', myEmail).maybeSingle();
     if (adminError) throw adminError;
-    if (!isAdmin) throw new Refus('Réservé aux administrateurs SAM.', 403);
+    // Sans colonne « niveau » (roles.sql pas encore exécuté), tout administrateur garde l'accès.
+    if (!mine || (mine.niveau ?? 'full') !== 'full') throw new Refus('Réservé aux administrateurs « full admin ».', 403);
 
     // 2. Action demandée
     const body = await req.json().catch(() => ({}));
@@ -70,7 +75,8 @@ Deno.serve(async (req: Request) => {
       case 'list': return reply({ accounts: await listAccounts(admin) });
       case 'invite': return reply(await invite(admin, body));
       case 'reinvite': return reply(await reinvite(admin, body));
-      case 'setAdmin': return reply(await setAdmin(admin, body, myEmail));
+      case 'setRole': return reply(await setRole(admin, body, myEmail));
+      case 'setAdmin': return reply(await setRole(admin, { ...body, role: body.admin === true ? 'admin' : 'normal' }, myEmail));
       case 'suspend': return reply(await suspend(admin, body, me.id));
       case 'delete': return reply(await remove(admin, body, me.id));
       default: throw new Refus('Action inconnue.');
@@ -99,11 +105,11 @@ async function allUsers(admin: Admin) {
 async function listAccounts(admin: Admin) {
   const [users, admins, profiles] = await Promise.all([
     allUsers(admin),
-    admin.from('sam_admins').select('email'),
+    admin.from('sam_admins').select('*'),
     admin.from('profils').select('id,prenom,nom,structure,fonction,telephone,commune')
   ]);
   if (admins.error) throw admins.error;
-  const adminSet = new Set((admins.data ?? []).map((a: { email: string }) => a.email));
+  const roles = new Map((admins.data ?? []).map((a: { email: string; niveau?: string }) => [a.email, a.niveau === 'admin' ? 'admin' : 'full']));
   // La table des profils peut ne pas encore exister : les comptes restent listés.
   const byId = new Map((profiles.error ? [] : profiles.data ?? []).map((p: { id: string }) => [p.id, p]));
   const now = Date.now();
@@ -118,7 +124,8 @@ async function listAccounts(admin: Admin) {
       last_sign_in_at: u.last_sign_in_at ?? null,
       confirmed: Boolean(u.email_confirmed_at),
       banned: Boolean(u.banned_until && new Date(u.banned_until).getTime() > now),
-      admin: adminSet.has(String(u.email ?? '').toLowerCase()),
+      role: roles.get(String(u.email ?? '').toLowerCase()) ?? 'normal',
+      admin: roles.has(String(u.email ?? '').toLowerCase()),
       prenom: p.prenom ?? meta.prenom ?? null,
       nom: p.nom ?? meta.nom ?? null,
       structure: p.structure ?? meta.structure ?? null,
@@ -144,10 +151,8 @@ async function invite(admin: Admin, body: Admin) {
   }
   const id = data.user.id;
   await admin.from('profils').upsert({ id, ...profile, updated_at: new Date().toISOString() });
-  if (body.admin === true) {
-    const { error: e2 } = await admin.from('sam_admins').upsert({ email });
-    if (e2) throw e2;
-  }
+  const role = roleOf(body.role ?? (body.admin === true ? 'admin' : 'normal'));
+  if (role !== 'normal') await writeRole(admin, email, role);
   return { ok: true, id };
 }
 
@@ -161,17 +166,27 @@ async function reinvite(admin: Admin, body: Admin) {
   return { ok: true };
 }
 
-async function setAdmin(admin: Admin, body: Admin, myEmail: string) {
-  const email = String(body.email ?? '').trim().toLowerCase();
-  if (!email) throw new Refus('Adresse manquante.');
-  if (body.admin === true) {
-    const { error } = await admin.from('sam_admins').upsert({ email });
-    if (error) throw error;
-  } else {
-    if (email === myEmail) throw new Refus('Vous ne pouvez pas retirer vos propres droits d\'administrateur.');
+const roleOf = (value: unknown) => (value === 'full' || value === 'admin' ? value : 'normal') as 'normal' | 'admin' | 'full';
+
+async function writeRole(admin: Admin, email: string, role: 'normal' | 'admin' | 'full') {
+  if (role === 'normal') {
     const { error } = await admin.from('sam_admins').delete().eq('email', email);
     if (error) throw error;
+    return;
   }
+  const { error } = await admin.from('sam_admins').upsert({ email, niveau: role });
+  if (error) {
+    if (/niveau/i.test(error.message)) throw new Refus('Exécutez d\'abord supabase/roles.sql dans Supabase (SQL Editor).');
+    throw error;
+  }
+}
+
+async function setRole(admin: Admin, body: Admin, myEmail: string) {
+  const email = String(body.email ?? '').trim().toLowerCase();
+  if (!email) throw new Refus('Adresse manquante.');
+  const role = roleOf(body.role);
+  if (email === myEmail && role !== 'full') throw new Refus('Vous ne pouvez pas retirer vos propres droits « full admin ».');
+  await writeRole(admin, email, role);
   return { ok: true };
 }
 

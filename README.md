@@ -5,16 +5,26 @@ Application unique qui regroupe les six outils SAM et les données des stations 
 
 | Outil | Données | Accès (compte connecté) |
 |---|---|---|
-| Données (stations du réseau) | Supabase (collecte Comsag) + RIMpro | lecture ; fiche station administrateur |
+| Données (stations du réseau) | Supabase (collecte Comsag) + RIMpro | lecture ; fiche station et synchronisation : full admin |
 | Cartographie (stations du réseau) | Supabase + fonds IGN Géoplateforme | lecture ; un clic ouvre les données de la station |
 | Indicateurs agroclimatiques | Open-Meteo | lecture |
 | Programmation irrigation | Open-Meteo | lecture |
 | Bilan hydrique | Open-Meteo + parcelles | parcelles du compte (privées) |
 | Pilotage irrigation (FAO-56 Rev.1 2025, aperçu) | Open-Meteo + stations SAM + parcelles | administrateurs uniquement pendant la validation ; parcelles du compte (privées) |
-| Suivi phénologique | Supabase + Open-Meteo | lecture, saisie administrateur |
-| Tavelure | Supabase | lecture, saisie administrateur |
-| Piégeage | Supabase | lecture, saisie administrateur |
-| Administration (comptes, stations, capteurs) | Supabase + fonction `sam-admin` | administrateurs uniquement |
+| Suivi phénologique | Supabase + Open-Meteo | lecture, saisie admin et full admin |
+| Tavelure | Supabase | lecture, saisie admin et full admin |
+| Piégeage | Supabase | lecture, saisie admin et full admin |
+| Administration (comptes, stations, capteurs) | Supabase + fonction `sam-admin` | full admin uniquement |
+
+**Rôles**
+
+| Rôle | Pour qui | Droits |
+|---|---|---|
+| Normal | producteurs, techniciens | consultation de tous les outils, ses propres parcelles |
+| Admin | collègues SudExpé | en plus : saisie Phénologie, Tavelure, Piégeage — rien d'autre |
+| Full admin | responsable du programme | tout : comptes, rôles, stations, capteurs, fiches stations, synchronisation |
+
+Tous les graphiques ont un bouton « Agrandir » (à côté du CSV) qui les affiche en pleine page.
 
 Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
 (`https://sam.juju-chabat42.workers.dev`, redéployé à chaque poussée sur `main`) et par GitHub Pages
@@ -25,7 +35,8 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
 1. **SQL Editor** : coller et exécuter `supabase/schema.sql`, `supabase/stations.sql`
    puis `supabase/connexion_comptes.sql` (lecture réservée aux comptes, profils, RIMpro),
    puis `supabase/pilotage.sql` (parcelles du Pilotage irrigation ; tant qu'il n'est pas exécuté,
-   l'outil garde les parcelles sur l'appareil et l'indique à l'écran).
+   l'outil garde les parcelles sur l'appareil et l'indique à l'écran),
+   puis `supabase/roles.sql` (trois rôles : normal, admin, full admin).
 2. **Authentication → Sign In / Providers** : désactiver *Allow new users to sign up*.
 3. **Authentication → URL Configuration** : *Site URL* = adresse principale du site
    (aujourd'hui `https://sam.juju-chabat42.workers.dev`, plus tard le nom de domaine définitif).
@@ -34,14 +45,16 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
    d'invitation et de « mot de passe oublié ».
 4. **Authentication → Users → Add user** : *Send invitation* (la personne choisit son
    mot de passe) ou *Create new user* avec *Auto Confirm User* coché.
-5. Administrateurs (saisie) : ajouter l'adresse dans la table `sam_admins`
-   (`insert into public.sam_admins (email) values ('prenom.nom@sudexpe.net');`).
+5. Rôles : depuis l'onglet Administration → Comptes → *Gérer* (ou à la main, voir la fin de
+   `supabase/roles.sql`). Table `sam_admins` : absent = normal, `niveau = 'admin'` = admin,
+   `niveau = 'full'` = full admin.
 
-6. **Onglet Administration → Comptes** (inviter, donner les droits admin, suspendre,
+6. **Onglet Administration → Comptes** (inviter, changer le rôle, suspendre,
    supprimer depuis le site) : déployer une fois la fonction `supabase/functions/sam-admin/index.ts`
    — *Edge Functions → Deploy a new function → Via Editor*, nom `sam-admin`, coller le fichier,
    *Deploy*, puis désactiver *Verify JWT* dans ses réglages (la fonction vérifie elle-même
-   que l'appelant est dans `sam_admins`). La clé d'administration lui est fournie par Supabase.
+   que l'appelant est « full admin » dans `sam_admins`). La clé d'administration lui est fournie
+   par Supabase. Après une modification du fichier, recoller le code et refaire *Deploy*.
 7. **Mails (invitations, mot de passe oublié)** : le service d'envoi par défaut de Supabase
    n'écrit qu'aux membres de l'équipe du projet, avec un très petit nombre de mails par heure.
    Pour inviter des producteurs :
@@ -73,6 +86,7 @@ js/fao56/data/        tables FAO-56 2025 (cultures, sols, systèmes d'irrigation
 tests/fao56/          tests du moteur sur les exemples chiffrés de FAO-56 (node --test "tests/fao56/*.test.mjs")
 supabase/*.sql        tables, droits et règles d'accès, collecte des stations, imports
 supabase/functions/   fonction « sam-admin » (gestion des comptes depuis l'onglet Administration)
+supabase/roles.sql    rôles normal / admin / full admin
 supabase/emails/      modèles des mails d'invitation et de mot de passe (en français)
 _headers              en-têtes de sécurité (hébergement Cloudflare)
 service-worker.js     fonctionnement hors connexion

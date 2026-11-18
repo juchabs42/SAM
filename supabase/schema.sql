@@ -31,8 +31,11 @@ create extension if not exists pgcrypto;
 -- =============================================================================
 create table if not exists public.sam_admins (
   email text primary key check (email = lower(email)),
-  added_at timestamptz not null default now()
+  added_at timestamptz not null default now(),
+  -- 'admin' : saisie Phénologie, Tavelure, Piégeage ; 'full' : tout (comptes, stations…)
+  niveau text not null default 'admin' check (niveau in ('admin', 'full'))
 );
+alter table public.sam_admins add column if not exists niveau text not null default 'admin';
 
 alter table public.sam_admins enable row level security;
 -- Aucune politique : la liste n'est ni lisible ni modifiable depuis le site.
@@ -58,9 +61,29 @@ revoke all on function public.is_sam_admin() from public;
 revoke execute on function public.is_sam_admin() from anon;
 grant execute on function public.is_sam_admin() to authenticated;
 
-insert into public.sam_admins (email)
-values ('jchabat@sudexpe.net')
-on conflict (email) do nothing;
+create or replace function public.is_sam_full_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, auth
+as $$
+  select exists (
+    select 1
+    from auth.users u
+    join public.sam_admins a on a.email = lower(u.email)
+    where u.id = auth.uid()
+      and u.email_confirmed_at is not null
+      and a.niveau = 'full'
+  );
+$$;
+
+revoke all on function public.is_sam_full_admin() from public, anon;
+grant execute on function public.is_sam_full_admin() to authenticated;
+
+insert into public.sam_admins (email, niveau)
+values ('jchabat@sudexpe.net', 'full')
+on conflict (email) do update set niveau = 'full';
 
 -- =============================================================================
 -- 2. Bilan hydrique — parcelles privées par compte
@@ -482,7 +505,8 @@ notify pgrst, 'reload schema';
 
 -- =============================================================================
 -- Ajouter un collègue administrateur (adresse en minuscules) :
---   insert into public.sam_admins (email) values ('prenom.nom@sudexpe.net');
+--   insert into public.sam_admins (email, niveau) values ('prenom.nom@sudexpe.net', 'admin');
+-- Rôles détaillés (normal / admin / full admin) : voir roles.sql.
 -- Retirer un administrateur :
 --   delete from public.sam_admins where email = 'prenom.nom@sudexpe.net';
 -- =============================================================================

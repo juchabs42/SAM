@@ -199,7 +199,7 @@ export async function mount(root, ctx) {
   </div>`;
   const modeButtons = [...slot.querySelectorAll('[data-mode]')];
 
-  const isAdmin = () => Boolean(ctx.isAdmin);
+  const isAdmin = () => Boolean(ctx.isFullAdmin); // fiche station, RIMpro, synchronisation : full admin
   const sensorName = code => sensorLabels[code]?.libelle || BASE_SENSORS[code]?.[0] || code;
   const sensorUnit = code => sensorLabels[code]?.unite || BASE_SENSORS[code]?.[1] || '';
   const selected = () => store.selected;

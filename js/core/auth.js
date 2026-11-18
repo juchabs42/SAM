@@ -7,7 +7,12 @@ const emitter = createEmitter();
 export const auth = {
   client: null,
   user: null,
+  /** Rôle : 'normal' (lecture), 'admin' (saisie Phéno, Tavelure, Piégeage), 'full' (tout). */
+  role: 'normal',
+  /** admin ou full admin : saisie dans Phénologie, Tavelure, Piégeage. */
   isAdmin: false,
+  /** full admin : comptes, stations, capteurs, fiches stations. */
+  isFullAdmin: false,
   ready: false,
   configured: false,
   /** Lien reçu par mail : 'recovery' (mot de passe oublié), 'invite' (invitation), etc. */
@@ -55,28 +60,37 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-async function checkAdmin() {
-  if (!auth.client || !auth.user) return false;
+async function rpcRole() {
+  const { data, error } = await withTimeout(auth.client.rpc('sam_role'), 8000);
+  if (!error) return ['full', 'admin'].includes(data) ? data : 'normal';
+  // Fonction absente (roles.sql pas encore exécuté) : ancien contrôle, tout administrateur = full admin.
+  if (error.code === 'PGRST202' || /sam_role/.test(error.message || '')) {
+    const legacy = await withTimeout(auth.client.rpc('is_sam_admin'), 8000);
+    if (legacy.error) throw legacy.error;
+    return legacy.data === true ? 'full' : 'normal';
+  }
+  throw error;
+}
+
+async function checkRole() {
+  if (!auth.client || !auth.user) return 'normal';
   try {
-    const { data, error } = await withTimeout(auth.client.rpc('is_sam_admin'), 8000);
-    if (error) {
-      console.warn('Vérification administrateur impossible', error);
-      return false;
-    }
-    return data === true;
+    return await rpcRole();
   } catch (error) {
-    console.warn('Vérification administrateur impossible', error);
-    return false;
+    console.warn('Vérification des droits impossible', error);
+    return 'normal';
   }
 }
 
 async function applySession(session) {
   const previousId = auth.user?.id || null;
-  const previousAdmin = auth.isAdmin;
+  const previousRole = auth.role;
   auth.user = session?.user || null;
-  auth.isAdmin = auth.user ? await checkAdmin() : false;
+  auth.role = auth.user ? await checkRole() : 'normal';
+  auth.isAdmin = auth.role === 'admin' || auth.role === 'full';
+  auth.isFullAdmin = auth.role === 'full';
   auth.ready = true;
-  if (previousId !== (auth.user?.id || null) || previousAdmin !== auth.isAdmin) {
+  if (previousId !== (auth.user?.id || null) || previousRole !== auth.role) {
     emitter.emit(auth);
   }
 }

@@ -36,8 +36,8 @@ function ago(value) {
 const TEMPLATE = `
 <div class="adm-main">
   <div class="adm-denied hidden" id="admDenied">
-    <strong>Page réservée aux administrateurs SAM.</strong>
-    <span>Votre compte est en lecture seule.</span>
+    <strong>Page réservée aux comptes « full admin ».</strong>
+    <span>La gestion des comptes, des stations et des capteurs n’est pas ouverte à votre rôle.</span>
   </div>
   <div id="admContent" class="hidden">
     <div class="adm-tabs" role="tablist" aria-label="Administration">
@@ -132,7 +132,13 @@ const TEMPLATE = `
         <label class="adm-field">Fonction<input id="accFonction" class="adm-input" autocomplete="off"></label>
       </div>
       <label class="adm-field">Téléphone<input id="accTelephone" class="adm-input" autocomplete="off" inputmode="tel"></label>
-      <label class="adm-check"><input type="checkbox" id="accAdmin"> Administrateur (gère les comptes, les stations et la saisie Phénologie, Tavelure, Piégeage)</label>
+      <label class="adm-field">Rôle
+        <select id="accRole" class="adm-input">
+          <option value="normal">Normal : consultation (producteurs, techniciens)</option>
+          <option value="admin">Admin : saisie Phénologie, Tavelure, Piégeage (collègues SudExpé)</option>
+          <option value="full">Full admin : tout, y compris comptes et stations</option>
+        </select>
+      </label>
       <p class="adm-message" id="accMessage" role="status"></p>
       <div class="adm-dialog-actions">
         <button type="button" class="adm-button" data-close>Annuler</button>
@@ -211,9 +217,9 @@ export async function mount(root, ctx) {
   // Accès : administrateurs uniquement (les droits réels sont contrôlés par Supabase)
   // ---------------------------------------------------------------------------
   function applyAccess() {
-    $('admDenied').classList.toggle('hidden', ctx.isAdmin);
-    $('admContent').classList.toggle('hidden', !ctx.isAdmin);
-    return ctx.isAdmin;
+    $('admDenied').classList.toggle('hidden', ctx.isFullAdmin);
+    $('admContent').classList.toggle('hidden', !ctx.isFullAdmin);
+    return ctx.isFullAdmin;
   }
 
   function showTab(id) {
@@ -315,6 +321,14 @@ export async function mount(root, ctx) {
     }
   }
 
+  // Rôles : l'ancienne réponse de la fonction (champ « admin » seul) compte comme full admin.
+  const ROLES = {
+    normal: { label: 'Normal', help: 'consultation seule (producteurs, techniciens).' },
+    admin: { label: 'Admin', help: 'saisie dans Phénologie, Tavelure et Piégeage, rien de plus.' },
+    full: { label: 'Full admin', help: 'accès complet : comptes, stations, capteurs, fiches stations et saisie.' }
+  };
+  const roleOf = a => (ROLES[a.role] ? a.role : a.admin ? 'full' : 'normal');
+
   function accountStatus(a) {
     if (a.banned) return { key: 'banned', label: 'Suspendu' };
     if (!a.confirmed) return { key: 'invited', label: 'Invité, pas encore activé' };
@@ -328,9 +342,9 @@ export async function mount(root, ctx) {
     const shown = query
       ? list.filter(a => [a.email, a.prenom, a.nom, a.structure, a.fonction, a.commune].some(v => String(v || '').toLowerCase().includes(query)))
       : list;
-    const admins = list.filter(a => a.admin).length;
+    const count = role => list.filter(a => roleOf(a) === role).length;
     const pending = list.filter(a => !a.confirmed).length;
-    $('accSummary').textContent = `${list.length} compte${list.length > 1 ? 's' : ''} · ${admins} administrateur${admins > 1 ? 's' : ''}${pending ? ` · ${pending} invitation${pending > 1 ? 's' : ''} en attente` : ''}`;
+    $('accSummary').textContent = `${list.length} compte${list.length > 1 ? 's' : ''} · ${count('full')} full admin · ${count('admin')} admin · ${count('normal')} normal${pending ? ` · ${pending} invitation${pending > 1 ? 's' : ''} en attente` : ''}`;
     if (!shown.length) {
       $('accList').innerHTML = `<p class="adm-empty">${query ? 'Aucun compte ne correspond à la recherche.' : 'Aucun compte.'}</p>`;
       return;
@@ -343,10 +357,10 @@ export async function mount(root, ctx) {
           const status = accountStatus(a);
           const name = [a.prenom, a.nom].filter(Boolean).join(' ');
           const self = a.id === meId;
+          const role = roleOf(a);
           const actions = [
-            a.admin
-              ? (self ? '' : `<button type="button" data-act="unadmin">Retirer les droits administrateur</button>`)
-              : `<button type="button" data-act="admin">Donner les droits administrateur</button>`,
+            ...(self ? [] : Object.keys(ROLES).filter(r => r !== role)
+              .map(r => `<button type="button" data-act="role" data-role="${r}">Passer en « ${ROLES[r].label} »</button>`)),
             a.confirmed
               ? `<button type="button" data-act="reset">Envoyer un lien de mot de passe</button>`
               : `<button type="button" data-act="reinvite">Renvoyer l’invitation</button>`,
@@ -358,7 +372,7 @@ export async function mount(root, ctx) {
           return `<tr data-id="${escapeHtml(a.id)}">
             <td data-label="Personne"><strong>${escapeHtml(name || a.email)}</strong>${name ? `<span class="adm-muted">${escapeHtml(a.email)}</span>` : ''}${self ? '<span class="adm-tag">vous</span>' : ''}</td>
             <td data-label="Structure">${escapeHtml(a.structure || '—')}${a.fonction ? `<span class="adm-muted">${escapeHtml(a.fonction)}</span>` : ''}</td>
-            <td data-label="Rôle">${a.admin ? '<span class="adm-badge is-admin">Administrateur</span>' : '<span class="adm-badge">Lecture</span>'}</td>
+            <td data-label="Rôle"><span class="adm-badge is-${role}" title="${escapeHtml(ROLES[role].help)}">${ROLES[role].label}</span></td>
             <td data-label="Statut"><span class="adm-status is-${status.key}">${status.label}</span>${!a.confirmed && a.invited_at ? `<span class="adm-muted">le ${escapeHtml(fmtDateTime(a.invited_at))}</span>` : ''}</td>
             <td data-label="Dernière connexion">${a.last_sign_in_at ? `${escapeHtml(fmtDateTime(a.last_sign_in_at))}<span class="adm-muted">${ago(a.last_sign_in_at)}</span>` : 'jamais'}</td>
             <td class="adm-cell-actions"><details class="adm-menu"><summary>Gérer</summary><div class="adm-menu-list">${actions}</div></details></td>
@@ -367,17 +381,15 @@ export async function mount(root, ctx) {
       </table>`;
   }
 
-  async function accountAction(id, act) {
+  async function accountAction(id, act, newRole) {
     const a = (state.accounts || []).find(x => x.id === id);
     if (!a) return;
     const who = [a.prenom, a.nom].filter(Boolean).join(' ') || a.email;
     try {
-      if (act === 'admin' || act === 'unadmin') {
-        const give = act === 'admin';
-        if (!await confirmAction(give ? 'Donner les droits administrateur' : 'Retirer les droits administrateur',
-          give ? `${who} pourra gérer les comptes et les stations, et saisir dans Phénologie, Tavelure et Piégeage.` : `${who} repassera en lecture seule.`)) return;
-        await callAdmin('setAdmin', { email: a.email, admin: give });
-        ctx.ui.toast(give ? `${who} est administrateur.` : `${who} est en lecture seule.`);
+      if (act === 'role' && ROLES[newRole]) {
+        if (!await confirmAction(`Passer en « ${ROLES[newRole].label} »`, `${who} : ${ROLES[newRole].help}`)) return;
+        await callAdmin('setRole', { email: a.email, role: newRole });
+        ctx.ui.toast(`${who} est maintenant « ${ROLES[newRole].label} ».`);
       } else if (act === 'reinvite') {
         await callAdmin('reinvite', { email: a.email, redirectTo: appUrl() });
         ctx.ui.toast(`Invitation renvoyée à ${a.email}.`);
@@ -406,7 +418,7 @@ export async function mount(root, ctx) {
     const button = event.target.closest('button[data-act]');
     if (!button) return;
     button.closest('details')?.removeAttribute('open');
-    accountAction(button.closest('tr').dataset.id, button.dataset.act);
+    accountAction(button.closest('tr').dataset.id, button.dataset.act, button.dataset.role);
   });
   $('accSearch').addEventListener('input', () => renderAccounts());
 
@@ -439,7 +451,7 @@ export async function mount(root, ctx) {
         structure: $('accStructure').value,
         fonction: $('accFonction').value,
         telephone: $('accTelephone').value,
-        admin: $('accAdmin').checked,
+        role: $('accRole').value,
         redirectTo: appUrl()
       });
       $('accDialog').close();

@@ -98,7 +98,7 @@ grant select, insert, update on public.profils to authenticated;
 
 drop policy if exists profils_lecture on public.profils;
 create policy profils_lecture on public.profils
-  for select to authenticated using (id = (select auth.uid()) or (select public.is_sam_admin()));
+  for select to authenticated using (id = (select auth.uid()) or (select public.is_sam_full_admin()));
 drop policy if exists profils_ajout on public.profils;
 create policy profils_ajout on public.profils
   for insert to authenticated with check (id = (select auth.uid()));

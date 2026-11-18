@@ -153,7 +153,7 @@ from public.station_mesures m
 group by m.station_id, (m.mesure_le at time zone 'Europe/Paris')::date;
 
 -- -----------------------------------------------------------------------------
--- 3. Droits : lecture par les comptes connectés, gestion par les admins SAM
+-- 3. Droits : lecture par les comptes connectés, gestion par les « full admin »
 -- -----------------------------------------------------------------------------
 alter table public.stations enable row level security;
 alter table public.station_mesures enable row level security;
@@ -164,13 +164,13 @@ create policy stations_lecture on public.stations
   for select to authenticated using (publique or (select public.is_sam_admin()));
 drop policy if exists stations_admin_maj on public.stations;
 create policy stations_admin_maj on public.stations
-  for update to authenticated using (public.is_sam_admin()) with check (public.is_sam_admin());
+  for update to authenticated using (public.is_sam_full_admin()) with check (public.is_sam_full_admin());
 drop policy if exists stations_admin_ajout on public.stations;
 create policy stations_admin_ajout on public.stations
-  for insert to authenticated with check (public.is_sam_admin());
+  for insert to authenticated with check (public.is_sam_full_admin());
 drop policy if exists stations_admin_suppr on public.stations;
 create policy stations_admin_suppr on public.stations
-  for delete to authenticated using (public.is_sam_admin());
+  for delete to authenticated using (public.is_sam_full_admin());
 
 drop policy if exists station_mesures_lecture on public.station_mesures;
 create policy station_mesures_lecture on public.station_mesures
@@ -182,7 +182,7 @@ drop policy if exists station_capteurs_lecture on public.station_capteurs;
 create policy station_capteurs_lecture on public.station_capteurs for select to authenticated using (true);
 drop policy if exists station_capteurs_admin on public.station_capteurs;
 create policy station_capteurs_admin on public.station_capteurs
-  for all to authenticated using (public.is_sam_admin()) with check (public.is_sam_admin());
+  for all to authenticated using (public.is_sam_full_admin()) with check (public.is_sam_full_admin());
 
 grant select on public.stations, public.station_mesures, public.station_capteurs, public.station_journalier to authenticated;
 revoke select on public.stations, public.station_mesures, public.station_capteurs, public.station_journalier from anon;
@@ -356,8 +356,8 @@ create or replace function public.stations_synchroniser(p_station text default n
 returns integer
 language plpgsql security definer set search_path = '' as $$
 begin
-  if not public.is_sam_admin() then
-    raise exception 'Réservé aux administrateurs SAM.';
+  if not public.is_sam_full_admin() then
+    raise exception 'Réservé aux administrateurs « full admin ».';
   end if;
   return sam_private.comsag_demander(p_station, null);
 end $$;
@@ -366,8 +366,8 @@ create or replace function public.stations_integrer()
 returns integer
 language plpgsql security definer set search_path = '' as $$
 begin
-  if not public.is_sam_admin() then
-    raise exception 'Réservé aux administrateurs SAM.';
+  if not public.is_sam_full_admin() then
+    raise exception 'Réservé aux administrateurs « full admin ».';
   end if;
   return sam_private.comsag_integrer();
 end $$;

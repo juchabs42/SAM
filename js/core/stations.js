@@ -60,7 +60,7 @@ export const stationStore = {
     const favorites = favIds.map(id => state.list.find(s => s.id === id)).filter(Boolean);
     const rest = state.list.filter(s => !favIds.includes(s.id));
     const installed = rest.filter(s => s.installee !== false).sort(byName);
-    const pending = auth.isAdmin ? rest.filter(s => s.installee === false).sort(byName) : [];
+    const pending = auth.isFullAdmin ? rest.filter(s => s.installee === false).sort(byName) : [];
     return { favorites, installed, pending };
   },
 

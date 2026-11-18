@@ -2,6 +2,7 @@
 // gauche (stations, uniquement dans l'onglet Données), cartes des outils, filtres
 // Localisation / Période, navigation et montage des outils.
 import { icons } from './icons.js';
+import { installChartExpand } from './expand.js';
 import { auth, signOut } from './auth.js';
 import { places, searchPlaces, locateMe, placeLabel } from './places.js';
 import { period } from './period.js';
@@ -9,7 +10,7 @@ import { profile } from './profile.js';
 import { stationStore, stationState } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-17.3';
+const APP_VERSION = '2026-11-18.1';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
@@ -257,10 +258,10 @@ function renderAuth() {
   const p = profile.data;
   const name = [p?.prenom, p?.nom].filter(Boolean).join(' ').trim();
   $('sam-perso-email').textContent = auth.user?.email || 'Mon profil';
-  $('sam-perso').title = `${name ? `${name} · ` : ''}${auth.isAdmin ? 'compte administrateur' : 'compte en lecture seule'} — Mon profil`;
-  // Onglet « Administration » : visible des seuls administrateurs.
-  $('sam-nav-admin').hidden = !auth.isAdmin;
-  $('sam-app').classList.toggle('is-admin', Boolean(auth.isAdmin));
+  $('sam-perso').title = `${name ? `${name} · ` : ''}${auth.isFullAdmin ? 'compte full admin' : auth.isAdmin ? 'compte admin (saisie)' : 'compte en lecture seule'} — Mon profil`;
+  // Onglet « Administration » : visible des seuls « full admin ».
+  $('sam-nav-admin').hidden = !auth.isFullAdmin;
+  $('sam-app').classList.toggle('is-admin', Boolean(auth.isFullAdmin));
   updateToolModePill();
   if (activeTool && !activeTool.section) renderToolCards(activeTool.id);
 }
@@ -296,7 +297,10 @@ let activeTool = null;
 function updateToolModePill() {
   if (!activeTool) return setModePill('');
   if (activeTool.preview) return setModePill('Aperçu équipe', 'admin');
-  if (activeTool.admin || activeTool.adminOnly) {
+  if (activeTool.adminOnly) {
+    if (auth.isFullAdmin) setModePill('Full admin', 'admin');
+    else setModePill('Lecture seule', 'readonly');
+  } else if (activeTool.admin) {
     if (auth.isAdmin) setModePill('Mode administrateur', 'admin');
     else setModePill('Lecture seule', 'readonly');
   }
@@ -498,7 +502,11 @@ function createContext(tool, root) {
     scope,
     get supabase() { return auth.client; },
     get user() { return auth.user; },
+    /** admin ou full admin : saisie Phénologie, Tavelure, Piégeage. */
     get isAdmin() { return auth.isAdmin; },
+    /** full admin : comptes, stations, capteurs, fiches stations. */
+    get isFullAdmin() { return auth.isFullAdmin; },
+    get role() { return auth.role; },
     onAuthChange(fn) { track(auth.onChange(() => { if (!disposed) fn(auth); })); },
     location: {
       get: () => places.current,
@@ -825,6 +833,7 @@ export function startShell() {
   period.onChange(() => renderPeriodValue());
 
   initPwa();
+  installChartExpand($('sam-tool'));
   window.addEventListener('hashchange', handleRoute);
   handleRoute();
 }

@@ -74,7 +74,11 @@ export async function mount(root, ctx) {
       ? name.split(/\s+/).map(part => part[0]).join('').slice(0, 2)
       : (user?.email || '?')[0];
     $('proAvatar').textContent = initials.toUpperCase();
-    $('proRole').textContent = ctx.isAdmin ? 'Administrateur SAM — saisie et modification' : 'Consultation (lecture seule)';
+    $('proRole').textContent = ctx.isFullAdmin
+      ? 'Full admin — accès complet (comptes, stations, saisie)'
+      : ctx.isAdmin
+        ? 'Admin — saisie Phénologie, Tavelure, Piégeage'
+        : 'Normal — consultation (lecture seule)';
     $('proRole').classList.toggle('is-admin', Boolean(ctx.isAdmin));
   }
 
