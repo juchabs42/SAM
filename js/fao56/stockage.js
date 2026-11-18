@@ -126,22 +126,6 @@ export function creerStockage(client, storage) {
       if (api.mode === 'local') { L.set('pluies', L.get('pluies').filter(r => r.id !== id)); return; }
       const { error } = await client.from('pilotage_pluies').delete().eq('id', id);
       if (error) throw error;
-    },
-
-    /** Parcelles de l'ancien outil « Bilan hydrique » du compte, pour reprise. */
-    async anciennesParcelles() {
-      if (!client) return [];
-      const { data, error } = await client.from('bilan_parcels').select('*').order('name');
-      if (error) return [];
-      return data || [];
-    },
-
-    async anciennesDonnees(parcelId) {
-      const [irr, pl] = await Promise.all([
-        client.from('bilan_irrigations').select('irrigation_date,amount_mm').eq('parcel_id', parcelId),
-        client.from('bilan_rain_corrections').select('rain_date,amount_mm').eq('parcel_id', parcelId)
-      ]);
-      return { irrigations: irr.data || [], pluies: pl.data || [] };
     }
   };
   return api;

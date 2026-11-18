@@ -321,7 +321,7 @@ export async function mount(root, ctx) {
   const S = {
     parcelles: [], id: storage.get('pilotage.courante', null), onglet: storage.get('pilotage.onglet', 'bilan'),
     annee: anneeDe(today), calc: null, irrigations: [], pluies: [], charge: false, erreur: null, token: 0,
-    chart: null, toutVoir: false, brouillon: null, anciennes: null, importLignes: null
+    chart: null, toutVoir: false, brouillon: null, importLignes: null
   };
   if (!['bilan', 'saisies', 'parcelle', 'aide'].includes(S.onglet)) S.onglet = 'bilan';
 
@@ -434,9 +434,7 @@ export async function mount(root, ctx) {
       <p>Créez une parcelle : espèce et conduite, sol, système d’irrigation et dates clés de la saison. L’outil calcule chaque jour l’eau disponible dans le sol et estime les apports d’irrigation des 7 prochains jours, en mm, en m³/ha et en durée de poste.</p>
       <div class="pil-actions">
         <button type="button" class="sam-button sam-button-primary" data-action="nouvelle">＋ Créer une parcelle</button>
-        <button type="button" class="sam-button" data-action="anciennes">Reprendre mes parcelles de l’ancien Bilan hydrique</button>
       </div>
-      <div id="pil-anciennes"></div>
     </div>`;
   }
 
@@ -953,10 +951,9 @@ export async function mount(root, ctx) {
       <div class="pil-card pil-form-head">
         <h2>${d.id ? `Réglages — ${esc(d.nom)}` : 'Nouvelle parcelle'}</h2>
         <div class="pil-actions">
-          ${d.id ? '<button type="button" class="sam-button" data-action="dupliquer">Dupliquer</button><button type="button" class="sam-button pil-danger" data-action="supprimer">Supprimer</button>' : '<button type="button" class="sam-button" data-action="anciennes">Reprendre une parcelle de l’ancien Bilan hydrique</button>'}
+          ${d.id ? '<button type="button" class="sam-button" data-action="dupliquer">Dupliquer</button><button type="button" class="sam-button pil-danger" data-action="supprimer">Supprimer</button>' : ''}
           <button type="submit" class="sam-button sam-button-primary">Enregistrer</button>
         </div>
-        <div id="pil-anciennes"></div>
         <p class="sam-form-message" id="pil-form-msg"></p>
       </div>
 
@@ -1241,8 +1238,7 @@ export async function mount(root, ctx) {
       try {
         const row = await store.enregistrerParcelle({
           ...(d.id ? { id: d.id } : {}), nom: d.nom, lieu: d.lieu || null, latitude: d.latitude, longitude: d.longitude, altitude: d.altitude,
-          surface_ha: d.surface_ha, station_id: d.station_id, culture_id: d.culture_id, classe_id: d.classe_id, config: d.config,
-          ...(d.origine_bilan_id ? { origine_bilan_id: d.origine_bilan_id } : {})
+          surface_ha: d.surface_ha, station_id: d.station_id, culture_id: d.culture_id, classe_id: d.classe_id, config: d.config
         });
         S.brouillon = null;
         ctx.ui.toast('Parcelle enregistrée');
@@ -1315,61 +1311,6 @@ export async function mount(root, ctx) {
     } catch (error) {
       msg.textContent = error.message || 'Calcul impossible.';
       msg.classList.add('is-error');
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Reprise des parcelles de l'ancien Bilan hydrique (pommier)
-  // ---------------------------------------------------------------------------
-  async function afficherAnciennes() {
-    const zone = $('#pil-anciennes');
-    if (!zone) return;
-    zone.innerHTML = '<p class="pil-muted"><span class="sam-spinner"></span> Recherche…</p>';
-    S.anciennes = await store.anciennesParcelles();
-    const deja = new Set(S.parcelles.map(p => p.origine_bilan_id).filter(Boolean));
-    zone.innerHTML = S.anciennes.length
-      ? `<ul class="pil-anciennes">${S.anciennes.map(a => `<li><span><b>${esc(a.name)}</b> <small>${esc(a.location_name || '')}</small></span>
-          ${deja.has(a.id) ? '<span class="pil-muted">déjà reprise</span>' : `<button type="button" class="sam-button" data-action="reprendre" data-id="${esc(a.id)}">Reprendre</button>`}</li>`).join('')}</ul>`
-      : '<p class="pil-muted">Aucune parcelle dans l’ancien Bilan hydrique pour ce compte.</p>';
-  }
-
-  async function reprendre(id) {
-    const a = S.anciennes?.find(x => x.id === id);
-    if (!a) return;
-    const cult = parId('pommier');
-    const cl = cult.classes[2] || cult.classes[0];
-    const cfg = configDefaut(cult, cl, anneeDe(today));
-    const texture = finite(a.clay) && finite(a.silt) && finite(a.sand) ? C.classeTextureUSDA(a.clay, a.silt, a.sand) : 'loam';
-    const sol = solParId(texture) || solParId('loam');
-    cfg.sol = { texture, thetaFC: sol.thetaFC, thetaWP: sol.thetaWP, rew: sol.rewDefaut, ze: 0.1, cailloux: 0, ruParM: finite(Number(a.rum_mm_cm)) ? Number(a.rum_mm_cm) * 100 : null };
-    if (finite(Number(a.root_depth_cm))) cfg.culture.zr = Number(a.root_depth_cm) / 100;
-    if (finite(Number(a.p_factor))) cfg.culture.p = Number(a.p_factor);
-    const sys = systemeParId(a.irrigation_system === 'sprinkler' ? 'aspersion-verger' : 'goutte-a-goutte');
-    Object.assign(cfg.irrigation, { systeme: sys.id, fw: sys.fwDefaut, efficience: sys.efficience });
-    cfg.strategie.mode = sys.frequent ? 'confort' : 'fao';
-    cfg.debutBilan = '10-01';
-    if (a.use_custom_kc && finite(Number(a.kc_mid))) {
-      cfg.methode = 'simple';
-      cfg.culture.kcPerso = { ini: Number(a.kc_initial), mi: Number(a.kc_peak ?? a.kc_mid), fin: Number(a.kc_end) };
-    }
-    try {
-      const row = await store.enregistrerParcelle({
-        nom: a.name, lieu: a.location_name || null, latitude: a.lat, longitude: a.lon, altitude: null,
-        surface_ha: a.area_ha, station_id: null, culture_id: cult.id, classe_id: cl.id, config: cfg, origine_bilan_id: a.id
-      });
-      const old = await store.anciennesDonnees(a.id);
-      await store.ajouterIrrigations(old.irrigations.filter(r => Number(r.amount_mm) > 0).map(r => ({
-        parcelle_id: row.id, jour: r.irrigation_date, dose_brute_mm: Number(r.amount_mm), saisie: { unite: 'mm', valeur: Number(r.amount_mm) }, note: 'Reprise Bilan hydrique'
-      })));
-      await store.enregistrerPluies(old.pluies.map(r => ({ parcelle_id: row.id, jour: r.rain_date, pluie_mm: Number(r.amount_mm) })));
-      ctx.ui.toast(`« ${a.name} » reprise : vérifiez la conduite et les dates de la saison`);
-      S.brouillon = null;
-      S.id = row.id;
-      S.onglet = 'parcelle';
-      await chargerParcelles();
-      await ouvrir(row.id);
-    } catch (error) {
-      ctx.ui.toast(error.message || 'Reprise impossible');
     }
   }
 
@@ -1452,11 +1393,6 @@ export async function mount(root, ctx) {
         calculer();
       } else if (action === 'csv') {
         exporterCsv();
-      } else if (action === 'anciennes') {
-        await afficherAnciennes();
-      } else if (action === 'reprendre') {
-        btn.disabled = true;
-        await reprendre(btn.dataset.id);
       } else if (action === 'importer') {
         btn.disabled = true;
         await importer();
@@ -1492,7 +1428,6 @@ export async function mount(root, ctx) {
       } else if (action === 'dupliquer') {
         const d = structuredClone(lireFormulaire());
         d.id = null;
-        d.origine_bilan_id = null;
         d.nom = `${d.nom} (copie)`;
         S.brouillon = d;
         renderParcelle();

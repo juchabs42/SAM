@@ -114,8 +114,6 @@
 .tool-pilotage .pil-lieu-res:empty { display: none; }
 .tool-pilotage .pil-lieu-res button { padding: 8px 12px; border: 0; border-bottom: 1px solid var(--sam-line-2); background: none; text-align: left; font: inherit; cursor: pointer; }
 .tool-pilotage .pil-lieu-res button:hover { background: var(--sam-bg-soft); }
-.tool-pilotage .pil-anciennes { margin: 10px 0 0; padding: 0; list-style: none; }
-.tool-pilotage .pil-anciennes li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--sam-line-2); }
 
 @media (max-width: 900px) {
   .tool-pilotage .pil-grid, .tool-pilotage .pil-grid-2 { grid-template-columns: minmax(0, 1fr); }

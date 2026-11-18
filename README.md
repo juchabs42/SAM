@@ -86,6 +86,7 @@ tests/fao56/          tests du moteur sur les exemples chiffrés de FAO-56 (node
 supabase/*.sql        tables, droits et règles d'accès, collecte des stations, imports
 supabase/functions/   fonction « sam-admin » (gestion des comptes depuis l'onglet Administration)
 supabase/roles.sql    rôles normal / admin / full admin
+supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bilan hydrique
 supabase/emails/      modèles des mails d'invitation et de mot de passe (en français)
 _headers              en-têtes de sécurité (hébergement Cloudflare)
 service-worker.js     fonctionnement hors connexion
@@ -115,11 +116,10 @@ Une fois le domaine actif : le mettre en *Site URL* et dans les *Redirect URLs* 
 
 ## Bilan irrigation (méthode FAO-56, édition 2025)
 
-Ouvert à tous les comptes. Il remplace définitivement l'ancien « Bilan hydrique » (supprimé du
-site ; les anciens liens `#/bilan` mènent au Bilan irrigation). Les parcelles de l'ancien outil
-restent en base (`bilan_parcels`) et se reprennent depuis le nouveau (bouton « Reprendre mes
-parcelles de l'ancien Bilan hydrique »). Sans `supabase/pilotage.sql`, les parcelles restent
-sur l'appareil.
+Ouvert à tous les comptes. Il remplace définitivement l'ancien « Bilan hydrique », supprimé du
+site (les anciens liens `#/bilan` mènent au Bilan irrigation) et de la base : exécuter une fois
+`supabase/suppression_bilan_hydrique.sql` (efface les tables `bilan_*`, irréversible). Sans
+`supabase/pilotage.sql`, les parcelles du Bilan irrigation restent sur l'appareil.
 
 - **Vocabulaire** : l'outil présente des estimations calculées (« apport calculé », « seuil
   d'irrigation atteint »), sans aucune recommandation, et rappelle que la décision d'irriguer

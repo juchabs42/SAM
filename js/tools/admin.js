@@ -404,7 +404,7 @@ export async function mount(root, ctx) {
         await callAdmin('suspend', { id: a.id, suspended: off });
         ctx.ui.toast(off ? `Accès de ${who} suspendu.` : `Accès de ${who} réactivé.`);
       } else if (act === 'delete') {
-        if (!await confirmAction('Supprimer le compte', `Le compte de ${who} (${a.email}) sera supprimé définitivement, avec ses parcelles du bilan hydrique. Cette action est irréversible.`, 'Supprimer définitivement')) return;
+        if (!await confirmAction('Supprimer le compte', `Le compte de ${who} (${a.email}) sera supprimé définitivement, avec ses parcelles du Bilan irrigation. Cette action est irréversible.`, 'Supprimer définitivement')) return;
         await callAdmin('delete', { id: a.id });
         ctx.ui.toast(`Compte de ${who} supprimé.`);
       }

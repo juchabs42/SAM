@@ -21,7 +21,6 @@ create table if not exists public.pilotage_parcelles (
   culture_id text not null,
   classe_id text,
   config jsonb not null default '{}'::jsonb,
-  origine_bilan_id uuid,
   archivee boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
