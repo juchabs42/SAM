@@ -9,8 +9,7 @@ Application unique qui regroupe les six outils SAM et les données des stations 
 | Cartographie (stations du réseau) | Supabase + fonds IGN Géoplateforme | lecture ; un clic ouvre les données de la station |
 | Indicateurs agroclimatiques | Open-Meteo | lecture |
 | Programmation irrigation | Open-Meteo | lecture |
-| Bilan hydrique | Open-Meteo + parcelles | parcelles du compte (privées) |
-| Bilan irrigation (aperçu, remplacera Bilan hydrique) | Open-Meteo + stations SAM + parcelles | équipe SAM pendant la validation ; parcelles du compte (privées) |
+| Bilan irrigation | Open-Meteo + stations SAM + parcelles | tous les comptes ; parcelles du compte (privées) |
 | Suivi phénologique | Supabase + Open-Meteo | lecture, saisie admin et full admin |
 | Tavelure | Supabase | lecture, saisie admin et full admin |
 | Piégeage | Supabase | lecture, saisie admin et full admin |
@@ -116,11 +115,11 @@ Une fois le domaine actif : le mettre en *Site URL* et dans les *Redirect URLs* 
 
 ## Bilan irrigation (méthode FAO-56, édition 2025)
 
-Outil en aperçu, visible de l'équipe SAM (`preview: true` dans `js/core/shell.js`). Il remplace
-« Bilan hydrique » : pour un compte qui voit le Bilan irrigation, l'ancien outil est masqué
-(`replacedBy`) et ses anciens liens mènent au nouveau. Pour l'ouvrir à tous, retirer `preview` :
-l'ancien Bilan hydrique disparaît alors pour tout le monde. Les parcelles de l'ancien outil se
-reprennent depuis le nouveau (bouton « Reprendre mes parcelles de l'ancien Bilan hydrique »).
+Ouvert à tous les comptes. Il remplace définitivement l'ancien « Bilan hydrique » (supprimé du
+site ; les anciens liens `#/bilan` mènent au Bilan irrigation). Les parcelles de l'ancien outil
+restent en base (`bilan_parcels`) et se reprennent depuis le nouveau (bouton « Reprendre mes
+parcelles de l'ancien Bilan hydrique »). Sans `supabase/pilotage.sql`, les parcelles restent
+sur l'appareil.
 
 - **Vocabulaire** : l'outil présente des estimations calculées (« apport calculé », « seuil
   d'irrigation atteint »), sans aucune recommandation, et rappelle que la décision d'irriguer

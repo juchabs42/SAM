@@ -10,16 +10,13 @@ import { profile } from './profile.js';
 import { stationStore, stationState } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-18.3';
+const APP_VERSION = '2026-11-18.4';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
   { id: 'irrigation', title: 'SAM Programmation irrigation', card: 'Program&shy;mation <br>irrigation', icon: 'toolIrrigation' },
-  // Remplacé par « Bilan irrigation » : masqué dès que celui-ci est visible (équipe aujourd'hui, tous à l'ouverture).
-  { id: 'bilan', title: 'SAM Bilan hydrique', card: 'Bilan <br>hydrique', icon: 'toolBilan', replacedBy: 'pilotage' },
-  // Aperçu : visible des seuls administrateurs SAM tant que l'outil n'est pas ouvert à tous
-  // (retirer « preview » pour l'ouvrir : l'ancien Bilan hydrique disparaît alors pour tout le monde).
-  { id: 'pilotage', title: 'SAM Bilan irrigation', card: 'Bilan <br>irrigation', icon: 'toolBilan', preview: true },
+  // « Bilan irrigation » : remplace définitivement l'ancien Bilan hydrique (anciens liens #/bilan redirigés).
+  { id: 'pilotage', title: 'SAM Bilan irrigation', card: 'Bilan <br>irrigation', icon: 'toolBilan' },
   { id: 'phenologie', title: 'SAM Suivi phénologique', card: 'Suivi <br>phéno&shy;logique', icon: 'toolPheno', admin: true },
   { id: 'tavelure', title: 'SAM Tavelure', card: 'Tavelure', icon: 'toolTavelure', admin: true },
   { id: 'piegeage', title: 'SAM Piégeage', card: 'Piégeage', icon: 'toolPiegeage', admin: true }
@@ -576,9 +573,11 @@ function routeFromHash() {
 }
 
 /** Outil qui remplace un outil masqué (ancien lien ou dernier outil mémorisé), s'il est visible. */
+// Outils retirés : leurs anciens liens et favoris mènent au remplaçant.
+const RETIRED = { bilan: 'pilotage' };
+
 function replacementOf(id) {
-  const old = TOOLS.find(t => t.id === id);
-  const next = old?.replacedBy ? TOOLS.find(t => t.id === old.replacedBy) : null;
+  const next = TOOLS.find(t => t.id === RETIRED[id]);
   return next && toolVisible(next) ? next.id : null;
 }
 

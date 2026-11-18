@@ -3,7 +3,6 @@
 // Calcule chaque jour l'eau disponible dans le sol et estime les apports d'irrigation des
 // 7 prochains jours. Les résultats sont des estimations de calcul : l'outil ne formule aucune
 // recommandation, la décision d'irriguer revient à l'exploitant.
-// Outil en aperçu : visible des seuls administrateurs SAM tant qu'il n'est pas ouvert à tous.
 
 import { storage, escapeHtml, todayISO, addDaysISO, formatNumber } from '../core/util.js';
 import { enableChartZoom } from '../core/charts.js';
@@ -317,11 +316,6 @@ function dateExcel(value) {
 // ---------------------------------------------------------------------------
 export async function mount(root, ctx) {
   ctx.filters({ location: false, period: false });
-  if (!ctx.isAdmin) {
-    root.innerHTML = `<div class="pil"><div class="pil-card pil-vide"><h2>Bilan irrigation</h2>
-      <p>Cet outil est en préparation et réservé pour l’instant à l’équipe SAM.</p></div></div>`;
-    return {};
-  }
   const today = todayISO();
   const store = creerStockage(ctx.supabase || null, storage);
   const S = {
@@ -335,7 +329,6 @@ export async function mount(root, ctx) {
     <div class="pil-bar">
       <label class="pil-parcelle"><span>Parcelle</span><select id="pil-parcelle" class="sam-input"></select></label>
       <button type="button" class="sam-button" data-action="nouvelle">＋ Nouvelle parcelle</button>
-      <span class="pil-badge">Aperçu équipe</span>
     </div>
     <div id="pil-mode" class="pil-alerte hidden"></div>
     <nav class="pil-tabs" role="tablist">

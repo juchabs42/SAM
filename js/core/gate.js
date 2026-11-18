@@ -34,7 +34,9 @@ export function runGate({ mode = 'login', message = '' } = {}) {
   document.body.classList.add('is-gated');
 
   return new Promise(resolve => {
+    // Après la page de connexion : toujours l'onglet Données.
     const done = () => {
+      if (window.location.hash !== '#/donnees') window.location.hash = '#/donnees';
       gate.hidden = true;
       app.hidden = false;
       document.body.classList.remove('is-gated');
