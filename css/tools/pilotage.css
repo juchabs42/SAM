@@ -67,7 +67,18 @@
 .tool-pilotage .pil-kpi.is-alerte b { color: var(--sam-red-800); }
 .tool-pilotage .pil-kpi-large { grid-column: 1 / -1; }
 .tool-pilotage .pil-kpi-large small { line-height: 1.4; }
-.tool-pilotage .pil-pluie-loin { margin: 10px 0 0; padding: 8px 10px; border: 1px solid #f1d28a; border-radius: var(--sam-radius-sm); background: #fff8e6; font-size: .86rem; line-height: 1.45; }
+.tool-pilotage .pil-pluie-loin { display: grid; gap: 2px; margin: 10px 0 0; padding: 8px 10px; border: 1px solid #f1d28a; border-radius: var(--sam-radius-sm); background: #fff8e6; font-size: .86rem; line-height: 1.4; }
+.tool-pilotage .pil-pluie-loin span { color: var(--sam-ink-2); font-size: .82rem; }
+/* Carte de situation : apport mis en avant, chiffres des 8 prochains jours */
+.tool-pilotage .pil-apport { display: grid; gap: 2px; margin: 4px 0 12px; padding: 10px 12px; border-radius: var(--sam-radius-sm); background: var(--sam-red-50); font-size: .9rem; }
+.tool-pilotage .pil-apport-quand { color: var(--sam-ink-2); font-size: .82rem; font-weight: 600; }
+.tool-pilotage .pil-apport-dose { color: var(--sam-red-800); font-size: 1.7rem; font-weight: 800; line-height: 1.15; }
+.tool-pilotage .pil-faits { display: grid; margin: 0 0 4px; }
+.tool-pilotage .pil-faits > div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--sam-line-2); font-size: .92rem; }
+.tool-pilotage .pil-faits > div:last-child { border-bottom: 0; }
+.tool-pilotage .pil-faits dt { color: var(--sam-ink-2); }
+.tool-pilotage .pil-faits dd { margin: 0; font-weight: 600; text-align: right; white-space: nowrap; }
+.tool-pilotage .pil-mention { margin: 12px 0 0; color: var(--sam-muted); font-size: .78rem; line-height: 1.4; }
 .tool-pilotage .pil-alerte-saison { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
 .tool-pilotage .pil-alerte-saison p { flex: 1 1 420px; margin: 0; }
 .tool-pilotage .pil-faq details { padding: 8px 0; border-bottom: 1px solid var(--sam-line-2); }
@@ -75,7 +86,7 @@
 .tool-pilotage .pil-faq summary { font-weight: 600; }
 .tool-pilotage .pil-faq details[open] > summary { margin-bottom: 4px; }
 .tool-pilotage .pil-faq p { margin: 4px 0 4px; color: var(--sam-ink-2); font-size: .9rem; }
-.tool-pilotage .pil-chart { position: relative; height: 340px; }
+.tool-pilotage .pil-chart { position: relative; height: clamp(400px, 64vh, 600px); }
 .tool-pilotage .pil-note { margin: 8px 0 0; color: var(--sam-muted); font-size: .84rem; }
 .tool-pilotage details > summary { cursor: pointer; font-weight: 700; }
 .tool-pilotage details[open] > summary { margin-bottom: 10px; }
@@ -146,7 +157,9 @@
 .tool-pilotage .pil-lieu-boite { position: relative; }
 .tool-pilotage .pil-lieu-etat { color: #1f6b3a; font-size: .8rem; font-weight: 500; }
 .tool-pilotage .pil-lieu-etat.is-erreur { color: var(--sam-red-800); }
-.tool-pilotage .pil-lieu-res { position: absolute; top: 100%; left: 0; right: 0; z-index: 5; display: grid; background: #fff; border-radius: 8px; box-shadow: var(--sam-shadow); }
+.tool-pilotage .pil-lieu-res { position: absolute; top: 100%; left: 0; z-index: 5; display: grid; min-width: 100%; width: max-content; max-width: min(360px, 90vw); background: #fff; border-radius: 8px; box-shadow: var(--sam-shadow); }
+.tool-pilotage .pil-lien { justify-self: start; padding: 0; border: 0; background: none; color: var(--sam-red-700); font: inherit; font-size: .84rem; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.tool-pilotage .pil-lien:hover { color: var(--sam-red-800); }
 .tool-pilotage .pil-lieu-res:empty { display: none; }
 .tool-pilotage .pil-lieu-res > span { padding: 8px 12px; }
 .tool-pilotage .pil-lieu-res button { padding: 8px 12px; border: 0; border-bottom: 1px solid var(--sam-line-2); background: none; text-align: left; font: inherit; cursor: pointer; }
@@ -160,7 +173,7 @@
   .tool-pilotage .pil-card { padding: 14px; }
   .tool-pilotage .pil-badge { margin-left: 0; }
   .tool-pilotage .pil-fields .pil-large, .tool-pilotage .pil-fields .pil-pleine { grid-column: auto; }
-  .tool-pilotage .pil-chart { height: 280px; }
+  .tool-pilotage .pil-chart { height: clamp(340px, 58vh, 460px); }
   .tool-pilotage .pil-titre { font-size: 1.12rem; }
   .tool-pilotage .pil-lexique { grid-template-columns: 1fr; }
   .tool-pilotage .pil-lexique dd { margin-bottom: 6px; }

@@ -630,14 +630,21 @@ export async function mount(root, ctx) {
     const marge = finite(syn.seuil) && finite(syn.drDebut) ? syn.seuil - syn.drDebut : null;
     const atteint = finite(marge) && marge <= 0;
     const avecPluvio = finite(pluvio) && pluvio > 0;
-    const ligneApport = (net, brut) => {
+    /** Apport mis en avant : dose, volume, durée, part utile aux racines. */
+    const blocApport = (quand, net, brut) => {
       const d = IR.decouperPostes(brut, pluvio, irr.dureeMaxPoste);
-      const duree = avecPluvio
-        ? (d.postes > 1 ? ` · ${d.postes} postes de ${IR.formatDuree(d.dureeParPoste)}` : ` · ${IR.formatDuree(d.dureeTotale)} de poste`)
-        : '';
-      const vol = p.surface_ha ? ` · ${f0(IR.mmVersM3ha(brut) * p.surface_ha)} m³ pour ${f2(p.surface_ha)} ha` : '';
-      return `<b>${f1(brut)} mm</b> (${f0(IR.mmVersM3ha(brut))} m³/ha)${duree}${vol}<br>
-        <span class="pil-muted">dont ${f1(net)} mm utiles aux racines (efficience du réseau ${pct(irr.efficience)})${avecPluvio ? '' : ' · renseignez la pluviométrie du réseau pour obtenir la durée de poste'}</span>`;
+      const details = [
+        `${f0(IR.mmVersM3ha(brut))} m³/ha`,
+        avecPluvio ? (d.postes > 1 ? `${d.postes} postes de ${IR.formatDuree(d.dureeParPoste)}` : `${IR.formatDuree(d.dureeTotale)} de poste`) : '',
+        p.surface_ha ? `${f0(IR.mmVersM3ha(brut) * p.surface_ha)} m³ pour ${f2(p.surface_ha)} ha` : ''
+      ].filter(Boolean).join(' · ');
+      return `<div class="pil-apport">
+        <span class="pil-apport-quand">${esc(quand)}</span>
+        <span class="pil-apport-dose">${f1(brut)} mm</span>
+        <span>${details}</span>
+        <span class="pil-muted">dont ${f1(net)} mm utiles aux racines (efficience du réseau ${pct(irr.efficience)})</span>
+        ${avecPluvio ? '' : '<span class="pil-muted">Renseignez la pluviométrie du réseau (onglet Parcelle) pour obtenir la durée de poste.</span>'}
+      </div>`;
     };
     let principal;
     if (syn.horsSaison && !syn.planifiees.length) {
@@ -647,23 +654,19 @@ export async function mount(root, ctx) {
       const lib = annuel ? LIBELLES_STADES.annuel : LIBELLES_STADES.perenne;
       principal = `<p class="pil-titre is-ok">Hors saison d’irrigation</p>
         <p class="pil-dose">${avant
-          ? `La saison saisie commence le ${esc(dateLongue(st.debut))} (${esc(lib[0].toLowerCase())}).`
-          : `La saison saisie s’est terminée le ${esc(dateLongue(st.fin))} (${esc(lib[4].toLowerCase())}).`} Aucun apport n’est calculé ; le bilan continue de suivre la recharge du sol par les pluies.</p>
-        <p class="pil-muted">${avant ? '' : 'Hors saison, la culture transpire peu, mais après une pluie le sol mouillé évapore : le coefficient du jour peut alors monter jusqu’à 1,2 environ. '}${avant
-          ? 'Si la culture a déjà démarré, corrigez la date de début de saison dans l’onglet Parcelle.'
-          : 'Si la culture est encore en végétation, corrigez la date de fin de saison dans l’onglet Parcelle.'}</p>`;
+          ? `La saison commence le ${esc(dateLongue(st.debut))} (${esc(lib[0].toLowerCase())}) : aucun apport n’est calculé d’ici là.`
+          : `La saison s’est terminée le ${esc(dateLongue(st.fin))} (${esc(lib[4].toLowerCase())}) : aucun apport n’est calculé.`}</p>
+        <p class="pil-muted">${avant ? 'Si la culture a déjà démarré' : 'Si la culture est encore en végétation'}, corrigez les dates dans l’onglet Parcelle.</p>`;
     } else if (syn.planifiees.length || atteint) {
       const first = syn.planifiees[0];
       const titre = atteint ? 'Seuil d’irrigation atteint' : `Seuil d’irrigation atteint ${dateLongue(first.date)} (prévision)`;
       const saisieJour = S.irrigations.filter(r => r.jour === today).reduce((a, r) => a + Number(r.dose_brute_mm || 0), 0);
-      const quand = !first ? '' : first.date === today ? 'Apport calculé pour aujourd’hui' : `Prochain apport calculé (${dateCourte(first.date)})`;
+      const quand = !first ? '' : first.date === today ? 'Apport calculé pour aujourd’hui' : `Prochain apport calculé : ${dateCourte(first.date)}`;
       principal = `<p class="pil-titre is-seuil">${esc(titre)}</p>
         ${saisieJour > 0 ? `<p class="pil-dose">Irrigation saisie aujourd’hui : ${f1(saisieJour)} mm.</p>` : ''}
-        ${first ? `<p class="pil-dose">${esc(quand)} : ${ligneApport(first.net, first.brut)}</p>` : ''}`;
+        ${first ? blocApport(quand, first.net, first.brut) : ''}`;
     } else {
-      const fin = res.jours.find(j => j.date === syn.horizon);
-      principal = `<p class="pil-titre is-ok">Seuil d’irrigation non atteint${syn.horizon ? ` d’ici ${esc(dateLongue(syn.horizon))}` : ''}</p>
-        <p class="pil-dose">${fin ? `Il resterait ${f0(fin.taw - fin.dr)} mm d’eau disponible en fin de période.` : ''}</p>`;
+      principal = `<p class="pil-titre is-ok">Seuil d’irrigation non atteint${syn.horizon ? ` d’ici ${esc(dateLongue(syn.horizon))}` : ''}</p>`;
     }
     // Apports identiques sur des jours consécutifs : une seule ligne « chaque jour du … au … »
     const groupes = [];
@@ -673,19 +676,25 @@ export async function mount(root, ctx) {
       else groupes.push({ debut: x.date, fin: x.date, brut: x.brut, n: 1 });
     }
     const liste = syn.planifiees.length > 1
-      ? `<p class="pil-sous-titre">Apports calculés sur la période :</p><ul class="pil-plan">${groupes.map(g => `<li><span>${g.n > 1 ? `Chaque jour du ${esc(dateCourte(g.debut))} au ${esc(dateCourte(g.fin))}` : esc(dateCourte(g.debut))}</span><span>${f1(g.brut)} mm · ${f0(IR.mmVersM3ha(g.brut))} m³/ha${avecPluvio ? ` · ${IR.formatDuree(g.brut / pluvio)}` : ''}</span></li>`).join('')}</ul>`
+      ? `<p class="pil-sous-titre">Apports calculés sur la période</p><ul class="pil-plan">${groupes.map(g => `<li><span>${g.n > 1 ? `Chaque jour du ${esc(dateCourte(g.debut))} au ${esc(dateCourte(g.fin))}` : esc(dateCourte(g.debut))}</span><span>${f1(g.brut)} mm · ${f0(IR.mmVersM3ha(g.brut))} m³/ha${avecPluvio ? ` · ${IR.formatDuree(g.brut / pluvio)}` : ''}</span></li>`).join('')}</ul>`
       : '';
+    // Les 8 prochains jours en quelques chiffres
     const total = syn.besoinBrut;
-    const quotidien = sys?.frequent && total > 0
-      ? `<p class="pil-muted">Réparti sur les 8 jours : ${f1(total / 8)} mm par jour${avecPluvio ? `, soit ${IR.formatDuree(total / 8 / pluvio)} de poste par jour` : ''}.</p>`
-      : '';
-    const pluieTxt = syn.pluiePrevue > 0.2 ? `Pluie prévue : ${f1(syn.pluiePrevue)} mm.` : 'Pas de pluie notable prévue.';
+    const finPeriode = res.jours.find(j => j.date === syn.horizon);
+    const faits = [
+      ['Apports calculés', total > 0 ? `<b>${f1(total)} mm</b> · ${f0(IR.mmVersM3ha(total))} m³/ha` : '<b>aucun</b>'],
+      sys?.frequent && total > 0 ? ['Soit en moyenne par jour', `${f1(total / 8)} mm${avecPluvio ? ` · ${IR.formatDuree(total / 8 / pluvio)} de poste` : ''}`] : null,
+      ['Consommation de la culture', `${f1(syn.etcPrevue)} mm`],
+      ['Pluie prévue', syn.pluiePrevue > 0.2 ? `${f1(syn.pluiePrevue)} mm` : 'pas de pluie notable'],
+      finPeriode ? [`Eau disponible le ${dateCourte(finPeriode.date)}`, `${f0(finPeriode.taw - finPeriode.dr)} mm`] : null
+    ].filter(Boolean);
     // Pluies annoncées au-delà de J+2 : prévision incertaine, signalée (elles sont comptées telles qu'annoncées)
     const limite = addDaysISO(today, 2);
     const lointaines = res.jours.filter(j => j.date > limite && (!syn.horizon || j.date <= syn.horizon) && j.pluie >= 0.5);
     const totalLoin = lointaines.reduce((s, j) => s + j.pluie, 0);
     const avertPluie = totalLoin >= 2
-      ? `<p class="pil-pluie-loin"><b>Pluie annoncée à plus de 2 jours : ${f1(totalLoin)} mm</b> (${lointaines.map(j => `${esc(dateCourte(j.date))} : ${f1(j.pluie)} mm`).join(' ; ')}). À cette échéance, les prévisions de pluie sont peu fiables : la pluie peut tomber un autre jour, être plus faible ou ne pas tomber. Elle est comptée dans le calcul telle qu’annoncée ; chaque jour, le bilan est refait avec la pluie réellement tombée.</p>`
+      ? `<div class="pil-pluie-loin"><b>Pluie à confirmer : ${lointaines.map(j => `${esc(dateCourte(j.date))} (${f1(j.pluie)} mm)`).join(', ')}</b>
+          <span>Prévue à plus de 2 jours, elle peut changer ou ne pas tomber. Elle est comptée dans le calcul, qui sera corrigé avec la pluie réellement tombée.</span></div>`
       : '';
     const ks = syn.ksAvant;
     const stress = niveauStress(ks);
@@ -696,11 +705,10 @@ export async function mount(root, ctx) {
         <p class="pil-kicker">Situation au ${esc(dateLongue(today))}</p>
         ${principal}
         ${liste}
-        <p>Sur 8 jours (aujourd’hui à J+7) : <b>${f1(total)} mm</b> d’apports calculés (${f0(IR.mmVersM3ha(total))} m³/ha), pour une consommation de la culture de ${f1(syn.etcPrevue)} mm. ${esc(pluieTxt)}</p>
+        <p class="pil-sous-titre">Sur les 8 prochains jours${syn.horizon ? ` (jusqu’au ${esc(dateCourte(syn.horizon))})` : ''}</p>
+        <dl class="pil-faits">${faits.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>
         ${avertPluie}
-        ${quotidien}
-        <p class="pil-avert">Estimation calculée à partir de la météo et des réglages de la parcelle, à confronter à l’observation de la culture et aux mesures de terrain (sondes, tensiomètres). La décision d’irriguer revient à l’exploitant.</p>
-        <div class="pil-actions pil-actions-tight"><button type="button" class="sam-button" data-tab-go="saisies">Saisir une irrigation</button></div>
+        <p class="pil-mention">Estimation à confronter au terrain (sondes, tensiomètres) : la décision d’irriguer revient à l’exploitant.</p>
       </div>
       <div class="pil-kpis">
         <div class="pil-kpi"><span>Eau disponible dans le sol</span><b>${f0(dispo)} mm</b><small>${pct(syn.fractionRU)} de la réserve utile (RU : ${f0(ru)} mm)</small></div>
@@ -1187,20 +1195,20 @@ export async function mount(root, ctx) {
 
       <fieldset class="pil-card"><legend>Parcelle</legend>
         <div class="pil-fields">
-          ${champ('nom', 'Nom de la parcelle', `<input id="pil-nom" name="nom" value="${esc(d.nom)}" required maxlength="80" placeholder="ex. Gala — bloc 3">`)}
+          ${champ('nom', 'Nom de la parcelle', `<input id="pil-nom" name="nom" value="${esc(d.nom)}" required maxlength="80" placeholder="ex. Gala — bloc 3">`, { classe: ' pil-large' })}
           ${champ('surface_ha', 'Surface (ha)', saisie('surface_ha', n(d.surface_ha, 3), ' placeholder="facultatif"'), { aide: 'Facultatif : pour obtenir les volumes en m³.' })}
-          <div class="sam-field pil-champ pil-large pil-lieu">
+          <div class="sam-field pil-champ pil-lieu">
             <span class="pil-entete"><label for="pil-lieu">Lieu</label>${q('lieu', 'Lieu')}</span>
             <div class="pil-lieu-boite">
               <input id="pil-lieu" name="lieu" value="${esc(d.lieu || '')}" placeholder="Rechercher une commune ou un village…" autocomplete="off">
               <div class="pil-lieu-res" id="pil-lieu-res"></div>
             </div>
             <small class="pil-lieu-etat${lieuOk ? '' : ' is-erreur'}" id="pil-lieu-etat">${lieuOk ? `Lieu retenu : ${esc(d.lieu || 'position de l’appareil')}` : 'Aucun lieu choisi : recherchez-le ou utilisez votre position.'}</small>
-            ${bulle('lieu', 'Tapez le nom de la commune ou du village, puis choisissez-le dans la liste. Vous pouvez aussi utiliser la position de votre appareil (bouton ci-dessous). Le lieu sert à la météo de la parcelle.')}
+            <button type="button" class="pil-lien" data-action="gps">Utiliser ma position</button>
+            ${bulle('lieu', 'Tapez le nom de la commune ou du village, puis choisissez-le dans la liste. Vous pouvez aussi utiliser la position de votre appareil. Le lieu sert à la météo de la parcelle.')}
           </div>
           ${champ('station_id', 'Station météo SAM (facultatif)', liste('station_id', `${opt('', d.station_id || '', 'Aucune : météo Open-Meteo seule')}${stations.map(s => opt(s.id, d.station_id || '', `${s.nom}${s.commune ? ` (${s.commune})` : ''}`)).join('')}`), { classe: ' pil-large', aide: 'Les températures, l’humidité et la pluie mesurées par la station remplacent celles d’Open-Meteo.' })}
         </div>
-        <div class="pil-actions pil-actions-tight"><button type="button" class="sam-button" data-action="gps">Utiliser ma position</button></div>
       </fieldset>
 
       <fieldset class="pil-card"><legend>Culture</legend>
