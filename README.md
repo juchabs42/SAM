@@ -170,6 +170,15 @@ site (les anciens liens `#/bilan` mènent au Bilan irrigation) et de la base : e
 - **Couverture mesurée** (facultatif) : ombre au sol vers midi (utilisée telle quelle) ou
   dimensions du feuillage vu du dessus (ombre de midi déduite de la forme, Encadré 9.2), avec
   calcul du pourcentage à partir des mesures.
+- **Formulaire Parcelle** : aides repliées derrière un bouton « ? » ; lieu choisi par recherche
+  (commune ou village) ou par la position de l'appareil, sans saisie de coordonnées ; dates
+  intermédiaires de la saison recalées dans les proportions du calendrier de l'espèce quand on
+  change la première ou la dernière (sauf si elles ont été corrigées). Les réglages qu'on ne
+  mesure pas sur le terrain sont appliqués automatiquement : humidités et évaporation du sol
+  selon le type de sol (Ze = 0,10 m, tableau 7.5), part du sol mouillée en surface selon le
+  système, densité du feuillage (ML) et régulation des stomates (Fr), enracinement au semis et
+  coefficient hors saison selon l'espèce. L'ajustement au climat est décoché par défaut avec des
+  coefficients personnalisés (déjà calés sur le climat local).
 - **Catalogue** : 76 espèces, 184 conduites (arboriculture, vigne, maraîchage, grandes cultures,
   prairies), généré depuis le PDF FAO ; à ne pas modifier à la main (`js/fao56/data/cultures-2025.js`).
 - **Valeurs par défaut hors méthode FAO**, signalées dans l'outil : profondeur d'enracinement des

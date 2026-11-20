@@ -129,6 +129,37 @@ function stadesModele(cult, annee) {
   return { debut: `${annee}-${a}`, finIni: `${annee}-${b}`, finDev: `${annee}-${c}`, finMi: `${annee}-${d}`, fin: `${annee}-${e}` };
 }
 
+/**
+ * Dates intermédiaires placées entre le début et la fin de saison dans les mêmes proportions
+ * que le calendrier par défaut de l'espèce (null si les deux dates sont trop proches).
+ */
+function datesIntermediaires(cult, debut, fin) {
+  const total = C.ecartJours(debut, fin);
+  if (!(total >= 8)) return null;
+  const m = stadesModele(cult, anneeDe(debut));
+  const tm = C.ecartJours(m.debut, m.fin);
+  const place = k => C.ajouterJours(debut, Math.round((total * C.ecartJours(m.debut, m[k])) / tm));
+  return { finIni: place('finIni'), finDev: place('finDev'), finMi: place('finMi') };
+}
+
+/** Ce qu'il faut observer à chaque date clé (aides du formulaire). */
+const AIDES_STADES = {
+  perenne: [
+    'Reprise de végétation : éclatement des bourgeons sur la plupart des plantes (stade C pour le pommier). Le coefficient part de sa valeur de démarrage.',
+    'Les premières feuilles sont déployées mais couvrent encore peu le sol (environ 10 % du sol ombragé). Ensuite, le coefficient monte.',
+    'Le feuillage a atteint son volume maximal : les pousses ne s’allongent presque plus et l’ombre au sol ne grandit plus. Le coefficient est alors au maximum.',
+    'Les feuilles commencent à vieillir ou à jaunir et la végétation ralentit, souvent après la récolte. Le coefficient commence à baisser.',
+    'La plupart des feuilles sont tombées. Après cette date, aucun apport n’est calculé.'
+  ],
+  annuel: [
+    'Date du semis ou de la plantation.',
+    'La culture couvre environ 10 % du sol. Ensuite, le coefficient monte.',
+    'La culture couvre le sol au maximum, souvent vers la floraison. Le coefficient est alors au maximum.',
+    'Les feuilles commencent à jaunir, les fruits ou les grains mûrissent. Le coefficient commence à baisser.',
+    'Récolte ou fin de la culture. Après cette date, aucun apport n’est calculé.'
+  ]
+};
+
 /** Réglages par défaut d'une parcelle pour une espèce et une conduite. */
 function configDefaut(cult, cl, annee) {
   const annuel = estAnnuel(cult);
@@ -231,12 +262,15 @@ function versMoteur(p, annee, meteo) {
   const stades = stadesPourAnnee(cfg.stades, annee, annuel);
   const climat = climatParStade(meteo, stades);
   const cu = cfg.culture;
+  // Réglages retirés du formulaire : valeurs par défaut de l'espèce, du sol et du système
+  const def = defautsCulture(cult, cl);
+  const solRef = solParId(cfg.sol.texture) || cfg.sol;
   const base = cu.kcbPerso || { ini: cl.kcb.ini, mi: cl.kcb.mid, fin: cl.kcb.end };
   let ajuster = cu.ajusterClimat !== false;
   let kcb = base;
   let ap = null;
   if (cu.ap?.actif) {
-    ap = calculAP(cult, cu, stades, climat, p.latitude);
+    ap = calculAP(cult, cl, cu, stades, climat, p.latitude);
     kcb = { ini: base.ini, mi: ap.kcb, fin: ajuster ? C.ajusterFin(base.fin, climat.fin.u2, climat.fin.hrmin, cu.h) : base.fin };
     ajuster = false;
   }
@@ -251,11 +285,11 @@ function versMoteur(p, annee, meteo) {
     cult, cl, stades, climat, ap,
     moteur: {
       annuel, stades, kcb, kc,
-      kcbHorsSaison: cu.kcbHorsSaison ?? C.KC_MIN,
+      kcbHorsSaison: def.kcbHorsSaison ?? C.KC_MIN,
       kcHorsSaison: kc ? (annuel ? 0.3 : kc.ini) : null,
-      h: cu.h, zr: cu.zr, zrMin: cu.zrMin ?? 0.2, p: cu.p,
-      sol: { thetaFC: cfg.sol.thetaFC, thetaWP: cfg.sol.thetaWP, rew: cfg.sol.rew, ze: cfg.sol.ze ?? 0.1, cailloux: (cfg.sol.cailloux || 0) / 100, ruParM: cfg.sol.ruParM },
-      fw: irr.fw, goutte: !!sys?.goutte, efficience: irr.efficience,
+      h: cu.h, zr: cu.zr, zrMin: def.zrMin ?? 0.2, p: cu.p,
+      sol: { thetaFC: solRef.thetaFC, thetaWP: solRef.thetaWP, rew: solRef.rewDefaut ?? solRef.rew, ze: 0.1, cailloux: (cfg.sol.cailloux || 0) / 100, ruParM: cfg.sol.ruParM },
+      fw: sys?.fwDefaut ?? irr.fw, goutte: !!sys?.goutte, efficience: irr.efficience,
       paillage: cfg.paillage?.type && cfg.paillage.type !== 'aucun' ? { type: cfg.paillage.type, couverture: (cfg.paillage.couverture || 0) / 100 } : null,
       fractionHumectee: irr.fractionHumectee ?? 1,
       etatInitial: { drFraction: 1 - (finite(cfg.etatInitial) ? cfg.etatInitial : 1) }
@@ -275,8 +309,10 @@ function versMoteur(p, annee, meteo) {
 
 const clampCible = v => (finite(v) ? Math.min(1, Math.max(0.5, v)) : 1);
 
-function calculAP(cult, cu, stades, climat, latitude) {
+function calculAP(cult, cl, cu, stades, climat, latitude) {
   const a = cu.ap;
+  // Densité du feuillage (ML) et régulation des stomates (Fr) : valeurs de référence de l'espèce
+  const ref = defautsCulture(cult, cl).ap;
   const milieuMi = C.ajouterJours(stades.finDev, Math.round(C.ecartJours(stades.finDev, stades.finMi) / 2));
   const J = jourAnnee(milieuMi);
   // Ombre mesurée vers midi : c'est déjà la couverture effective. Réglages enregistrés avant
@@ -286,9 +322,9 @@ function calculAP(cult, cu, stades, climat, latitude) {
     : a.forme === 'rangs'
       ? C.fcEffRangs(a.fc, { hauteurCanopee: a.hauteurCanopee, largeur: a.largeur, angleRangDeg: a.angleRang, latitude, J })
       : C.fcEffArbres(a.fc, latitude, J);
-  const kd = C.kdDensite({ fcEff, ml: a.ml ?? 1.5, h: cu.h });
+  const kd = C.kdDensite({ fcEff, ml: ref.ml ?? 1.5, h: cu.h });
   const kh = !estAnnuel(cult) || cu.h > 1.5 ? 0.1 : 0.2;
-  const kcbFull = C.kcbPlein({ fr: a.fr ?? 1, h: cu.h, u2: climat.mi.u2, hrMin: climat.mi.hrmin, kh });
+  const kcbFull = C.kcbPlein({ fr: ref.fr ?? 1, h: cu.h, u2: climat.mi.u2, hrMin: climat.mi.hrmin, kh });
   const kcb = C.kcbAP({ kd, kcbFull, kcbCouvert: finite(a.kcbCouvert) ? a.kcbCouvert : null });
   return { fcEff, kd, kcbFull, kcb, kh, J, date: milieuMi };
 }
@@ -337,7 +373,7 @@ function alertesSaison(p, cult, today) {
 
 /** Réserve utile de la parcelle (mm), réduite au volume humecté, et RFU. */
 function calculRU(cfg) {
-  const ruM = (finite(cfg.sol.ruParM) ? cfg.sol.ruParM : ruSol(cfg.sol)) * (1 - (cfg.sol.cailloux || 0) / 100);
+  const ruM = (finite(cfg.sol.ruParM) ? cfg.sol.ruParM : ruSol(solParId(cfg.sol.texture) || cfg.sol)) * (1 - (cfg.sol.cailloux || 0) / 100);
   const fHum = cfg.irrigation.fractionHumectee ?? 1;
   const ruZone = ruM * cfg.culture.zr * fHum;
   return { ruM, ruZone, rfu: ruZone * cfg.culture.p, fHum };
@@ -718,7 +754,7 @@ export async function mount(root, ctx) {
         ${apTxt}
         <li><b>Saison ${S.annee}</b> : ${lib.map((l, i) => `${esc(l.toLowerCase())} le ${dateFr([st.debut, st.finIni, st.finDev, st.finMi, st.fin][i])}`).join(' ; ')}.</li>
         <li><b>Sol</b> : ${esc(nomSol(cfg.sol.texture).toLowerCase())}, réserve utile ${f1(ruM / 100)} mm/cm, soit ${f0(ruM * zr)} mm sur ${f2(zr)} m d’enracinement${(cfg.irrigation.fractionHumectee ?? 1) < 1 ? `, dont ${pct(cfg.irrigation.fractionHumectee)} prise en compte (volume de sol humecté)` : ''}. RFU : ${pct(cfg.culture.p)} de la RU${opts.ajusterP ? ', ajustée chaque jour selon la chaleur' : ', fixe'}.</li>
-        <li><b>Irrigation</b> : ${esc((sys?.nom ?? '').toLowerCase())}, ${pct(cfg.irrigation.fw)} du sol mouillé en surface, efficience du réseau ${pct(cfg.irrigation.efficience)}.</li>
+        <li><b>Irrigation</b> : ${esc((sys?.nom ?? '').toLowerCase())}, ${pct(param.moteur.fw)} du sol mouillé en surface, efficience du réseau ${pct(cfg.irrigation.efficience)}.</li>
         <li><b>Calcul des apports</b> : seuil ${esc(seuilTxt)}, remplissage visé ${pct(opts.cible)}${finite(opts.doseMaxNette) ? `, apport utile limité à ${f1(opts.doseMaxNette)} mm par jour` : ''}.</li>
         <li><b>Hypothèses</b> : ${finite(cfg.etatInitial) && cfg.etatInitial < 1 ? `réserve remplie à ${pct(cfg.etatInitial)}` : 'réserve pleine'} au début du calcul (${dateFr(S.calc.per.debut)}) ; sol humide en profondeur quand les racines progressent ; pluie prévue comptée telle qu’annoncée (incertaine au-delà de 2 à 3 jours) ; ni ruissellement ni remontée d’eau de la nappe.</li>
         <li><b>Méthode</b> : FAO-56 (FAO, édition 2025), méthode de référence internationale pour les besoins en eau des cultures.</li>
@@ -1052,8 +1088,9 @@ export async function mount(root, ctx) {
   }
 
   function renderParcelle() {
-    // Sections repliables ouvertes : elles le restent quand le formulaire est redessiné
+    // Sections repliables et aides ouvertes : elles le restent quand le formulaire est redessiné
     const ouverts = new Set([...panel.querySelectorAll('#pil-form details[data-cle][open]')].map(x => x.dataset.cle));
+    const aidesOuvertes = new Set([...panel.querySelectorAll('#pil-form .pil-q[aria-expanded="true"]')].map(b => b.getAttribute('aria-controls')));
     const ouvert = cle => (ouverts.has(cle) ? ' open' : '');
     const d = S.brouillon || (courante() ? structuredClone(courante()) : nouvelleParcelle());
     S.brouillon = d;
@@ -1065,6 +1102,7 @@ export async function mount(root, ctx) {
     const stations = ctx.stations.store.list || [];
     const loc = cfg.irrigation.localise || {};
     const libStades = annuel ? LIBELLES_STADES.annuel : LIBELLES_STADES.perenne;
+    const aidesStades = annuel ? AIDES_STADES.annuel : AIDES_STADES.perenne;
     const champsStades = ['debut', 'finIni', 'finDev', 'finMi', 'fin'];
     const ap = cfg.culture.ap || {};
     // Réglages antérieurs au choix de la mesure, déjà activés : feuillage vu du dessus (calcul d'origine)
@@ -1077,24 +1115,40 @@ export async function mount(root, ctx) {
     const opt = (v, cur, label, extra = '') => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}${extra}>${esc(label)}</option>`;
     const n = (v, dgt = 2) => (finite(v) ? String(+v.toFixed(dgt)).replace('.', ',') : '');
     const cache = visible => (visible ? '' : ' hidden');
-    /** Pourcentage : réglette et case de saisie liées (la case porte le nom lu par le formulaire). */
-    const curseur = (name, label, val, { min = 0, max = 100, step = 1, aide = '', id = '', classe = '' } = {}) => {
+
+    // Aides repliées : un bouton « ? » affiche ou masque le texte d'aide
+    const q = (cle, titre) => `<button type="button" class="pil-q" aria-expanded="${aidesOuvertes.has(`aide-${cle}`)}" aria-controls="aide-${cle}" aria-label="Aide : ${esc(titre)}" title="Afficher l’aide">?</button>`;
+    const bulle = (cle, html) => `<div class="pil-bulle" id="aide-${cle}"${aidesOuvertes.has(`aide-${cle}`) ? '' : ' hidden'}>${html}</div>`;
+    /** Champ : titre et bouton d'aide, contrôle (id « pil-<cle> »), aide repliée. */
+    const champ = (cle, titre, controle, { aide = '', classe = '', id = '' } = {}) => `<div class="sam-field pil-champ${classe}"${id ? ` id="${id}"` : ''}>
+        <span class="pil-entete"><label for="pil-${cle}">${esc(titre)}</label>${aide ? q(cle, titre) : ''}</span>
+        ${controle}${aide ? bulle(cle, aide) : ''}
+      </div>`;
+    const saisie = (name, val, attrs = '') => `<input id="pil-${name}" name="${name}" inputmode="decimal" value="${val}"${attrs}>`;
+    const liste = (name, options) => `<select id="pil-${name}" name="${name}" class="sam-input">${options}</select>`;
+    /** Pourcentage : case de saisie à droite du titre, réglette sur toute la largeur en dessous. */
+    const curseur = (name, titre, val, { min = 0, max = 100, step = 1, aide = '', id = '', classe = '' } = {}) => {
       const v = finite(val) ? val : null;
-      return `<label class="sam-field pil-curseur${classe}"${id ? ` id="${id}"` : ''}>${esc(label)}
-        <span class="pil-curseur-ligne">
-          <input type="range" min="${min}" max="${max}" step="${step}" value="${v ?? min}" data-cible="${name}" aria-label="${esc(label)}">
-          <span class="pil-curseur-nb"><input name="${name}" inputmode="decimal" value="${v === null ? '' : n(v, 1)}" aria-label="${esc(label)} (valeur)"><span>%</span></span>
-        </span>${aide ? `<small class="pil-aide">${aide}</small>` : ''}</label>`;
+      return `<div class="sam-field pil-champ pil-curseur${classe}"${id ? ` id="${id}"` : ''}>
+        <span class="pil-entete"><label for="pil-${name}">${esc(titre)}</label>${aide ? q(name, titre) : ''}<span class="pil-curseur-nb"><input id="pil-${name}" name="${name}" inputmode="decimal" value="${v === null ? '' : n(v, 1)}"><span aria-hidden="true">%</span></span></span>
+        <input type="range" min="${min}" max="${max}" step="${step}" value="${v ?? min}" data-cible="${name}" aria-label="${esc(titre)}">
+        ${aide ? bulle(name, aide) : ''}
+      </div>`;
     };
+    /** Case à cocher avec son aide repliée ; « bascule » : bloc affiché quand la case est cochée. */
+    const coche = (name, libelle, etat, { aide = '', bascule = '' } = {}) => `<div class="pil-check-ligne">
+        <label class="pil-check"><input type="checkbox" name="${name}"${bascule ? ` data-bascule="${bascule}"` : ''}${etat ? ' checked' : ''}> ${esc(libelle)}</label>${aide ? q(name, libelle) : ''}
+      </div>${aide ? bulle(name, aide) : ''}`;
+
     const especes = Object.entries(FAMILLES).map(([k, v]) => {
-      const liste = CULTURES.filter(c => c.famille === k);
-      return liste.length ? `<optgroup label="${esc(v)}">${liste.map(c => opt(c.id, cult.id, c.nom)).join('')}</optgroup>` : '';
+      const l = CULTURES.filter(c => c.famille === k);
+      return l.length ? `<optgroup label="${esc(v)}">${l.map(c => opt(c.id, cult.id, c.nom)).join('')}</optgroup>` : '';
     }).join('');
     const aideConduite = annuel
       ? 'La conduite précise le type de production (par exemple tomate d’industrie ou de marché). Elle fixe les coefficients de besoin en eau de la culture.'
       : `La conduite décrit l’âge et la forme de la plantation, le nombre ${cult.famille === 'vigne' ? 'de pieds' : cult.id === 'kiwi' || cult.id === 'myrtillier' || cult.id === 'ronce' || cult.id === 'houblon' ? 'de plants' : 'd’arbres'} par hectare et le développement de la végétation (couverture : part du sol ombragée par le feuillage). Elle fixe les coefficients de besoin en eau.`;
     const gddOptions = (cult.gdd || []).map((g, i) => opt(i, 0, `${g.type} — ${f0(g.total)} degrés-jours`)).join('');
-    const plageSys = (r, unite = ' %') => (r[0] === r[1] ? `${f0(r[0] * 100)}${unite}` : `${f0(r[0] * 100)} à ${f0(r[1] * 100)}${unite}`);
+    const plageSys = r => (r[0] === r[1] ? `${f0(r[0] * 100)} %` : `${f0(r[0] * 100)} à ${f0(r[1] * 100)} %`);
 
     // Couverture mesurée : aide et champs de relevé selon la mesure et la forme
     const aideMesure = apMesure === 'ombre'
@@ -1107,16 +1161,19 @@ export async function mount(root, ctx) {
     const interDefaut = finite(rel.interRang) ? rel.interRang : loc.interRang;
     const champsReleve = apRangs
       ? `${apMesure === 'ombre'
-          ? `<label class="sam-field">Largeur de l’ombre (m)<input name="apRelLarg" inputmode="decimal" value="${n(rel.largeur)}"></label>`
-          : `<label class="sam-field">Largeur du feuillage (m)<input name="apLarg" inputmode="decimal" value="${n(ap.largeur)}"></label>`}
-        <label class="sam-field">Inter-rang (m)<input name="apRelInter" inputmode="decimal" value="${n(interDefaut)}"></label>`
-      : `<label class="sam-field">Diamètre ${apMesure === 'ombre' ? 'de l’ombre d’un arbre' : 'de la couronne'} (m)<input name="apRelDiam" inputmode="decimal" value="${n(rel.diametre)}"></label>
-        <label class="sam-field">Distance entre arbres sur le rang (m)<input name="apRelEsp" inputmode="decimal" value="${n(rel.espacement)}"></label>
-        <label class="sam-field">Inter-rang (m)<input name="apRelInter" inputmode="decimal" value="${n(interDefaut)}"></label>`;
+          ? champ('apRelLarg', 'Largeur de l’ombre (m)', saisie('apRelLarg', n(rel.largeur)))
+          : champ('apLarg', 'Largeur du feuillage (m)', saisie('apLarg', n(ap.largeur)))}
+        ${champ('apRelInter', 'Inter-rang (m)', saisie('apRelInter', n(interDefaut)))}`
+      : `${champ('apRelDiam', `Diamètre ${apMesure === 'ombre' ? 'de l’ombre d’un arbre' : 'de la couronne'} (m)`, saisie('apRelDiam', n(rel.diametre)))}
+        ${champ('apRelEsp', 'Distance entre arbres sur le rang (m)', saisie('apRelEsp', n(rel.espacement)))}
+        ${champ('apRelInter', 'Inter-rang (m)', saisie('apRelInter', n(interDefaut)))}`;
 
     const aideMethode = 'Détaillée : sépare chaque jour la transpiration de la culture et l’évaporation du sol, forte juste après une pluie ou une irrigation puis de plus en plus faible. Simplifiée : un coefficient moyen par stade, évaporation du sol comprise. L’écart est plus marqué en goutte-à-goutte (sol peu mouillé : la méthode simplifiée compte trop d’évaporation), en jeune plantation et après des pluies.';
+    const aideClimat = 'Les coefficients de référence valent pour un vent moyen de 2 m/s et une humidité minimale de l’air de 45 %. Quand l’air est plus sec et plus venté, une culture haute consomme davantage : l’outil corrige les coefficients de pleine végétation et de fin de saison avec le vent et l’humidité de votre période de pleine végétation (station SAM ou Open-Meteo). Exemple pour un pommier : +8 % avec 2,5 m/s et 35 % d’humidité, +17 % avec 3,5 m/s et 30 %, −8 % avec 1,5 m/s et 55 %. À décocher seulement avec des coefficients issus de vos essais, qui tiennent déjà compte de votre climat (décoché automatiquement avec les coefficients personnalisés).';
     const aideHumecte = `En goutte-à-goutte, seul un « bulbe » de sol autour des goutteurs est mouillé et les racines actives s’y concentrent : la réserve à prendre en compte est celle de ce volume. Une valeur plus faible donne des apports plus petits et plus fréquents. 100 % : tout le sol compte (aspersion).${sys ? ` Valeur courante pour ce système : ${plageSys(sys.humecte)} (à vérifier par un profil de sol ou des sondes).` : ''}`;
-    const aideFw = `Part de la surface du sol mouillée à chaque irrigation. Elle sert seulement au calcul de l’évaporation du sol, pas à la réserve.${sys ? ` Valeur courante pour ce système : ${plageSys(sys.fw)}.` : ''}`;
+    const aideSysteme = `Le système fixe les valeurs proposées pour l’efficience et le volume de sol humecté, ainsi que la part de la surface du sol mouillée à chaque irrigation, qui sert au calcul de l’évaporation du sol${sys ? ` (${f0(sys.fwDefaut * 100)} % pour ce système)` : ''}.`;
+    const aideDates = `Ces dates dessinent la courbe des besoins en eau : le coefficient monte entre « ${libStades[1]} » et « ${libStades[2]} », reste au maximum jusqu’à « ${libStades[3]} », puis baisse jusqu’à « ${libStades[4]} ». Les dates proposées sont indicatives : ajustez-les à vos observations. Quand vous changez la première ou la dernière date, les dates intermédiaires se recalent dans les mêmes proportions, sauf si vous les avez corrigées vous-même. Hors de la saison, aucun apport n’est calculé.${annuel ? '' : ` Dates de l’année ${anneeDe(cfg.stades.debut)}, reprises chaque année.`}`;
+    const lieuOk = finite(d.latitude) && finite(d.longitude);
 
     panel.innerHTML = `<form id="pil-form" class="pil-form" autocomplete="off" novalidate>
       <div class="pil-card pil-form-head">
@@ -1130,160 +1187,146 @@ export async function mount(root, ctx) {
 
       <fieldset class="pil-card"><legend>Parcelle</legend>
         <div class="pil-fields">
-          <label class="sam-field">Nom de la parcelle<input name="nom" value="${esc(d.nom)}" required maxlength="80" placeholder="ex. Gala — bloc 3"></label>
-          <label class="sam-field">Surface (ha)<input name="surface_ha" inputmode="decimal" value="${n(d.surface_ha, 3)}" placeholder="facultatif"><small class="pil-aide">Pour obtenir les volumes en m³.</small></label>
-          <label class="sam-field pil-lieu">Commune<input name="lieu" value="${esc(d.lieu || '')}" placeholder="Rechercher une commune…"><div class="pil-lieu-res" id="pil-lieu-res"></div></label>
-          <label class="sam-field">Latitude (°)<input name="latitude" inputmode="decimal" value="${n(d.latitude, 4)}" required></label>
-          <label class="sam-field">Longitude (°)<input name="longitude" inputmode="decimal" value="${n(d.longitude, 4)}" required></label>
-          <label class="sam-field">Altitude (m)<input name="altitude" inputmode="decimal" value="${n(d.altitude, 0)}" placeholder="automatique"></label>
-          <label class="sam-field pil-large">Station météo SAM (facultatif)<select name="station_id" class="sam-input">${opt('', d.station_id || '', 'Aucune : météo Open-Meteo seule')}${stations.map(s => opt(s.id, d.station_id || '', `${s.nom}${s.commune ? ` (${s.commune})` : ''}`)).join('')}</select><small class="pil-aide">Les températures, l’humidité et la pluie mesurées par la station remplacent celles d’Open-Meteo.</small></label>
+          ${champ('nom', 'Nom de la parcelle', `<input id="pil-nom" name="nom" value="${esc(d.nom)}" required maxlength="80" placeholder="ex. Gala — bloc 3">`)}
+          ${champ('surface_ha', 'Surface (ha)', saisie('surface_ha', n(d.surface_ha, 3), ' placeholder="facultatif"'), { aide: 'Facultatif : pour obtenir les volumes en m³.' })}
+          <div class="sam-field pil-champ pil-large pil-lieu">
+            <span class="pil-entete"><label for="pil-lieu">Lieu</label>${q('lieu', 'Lieu')}</span>
+            <div class="pil-lieu-boite">
+              <input id="pil-lieu" name="lieu" value="${esc(d.lieu || '')}" placeholder="Rechercher une commune ou un village…" autocomplete="off">
+              <div class="pil-lieu-res" id="pil-lieu-res"></div>
+            </div>
+            <small class="pil-lieu-etat${lieuOk ? '' : ' is-erreur'}" id="pil-lieu-etat">${lieuOk ? `Lieu retenu : ${esc(d.lieu || 'position de l’appareil')}` : 'Aucun lieu choisi : recherchez-le ou utilisez votre position.'}</small>
+            ${bulle('lieu', 'Tapez le nom de la commune ou du village, puis choisissez-le dans la liste. Vous pouvez aussi utiliser la position de votre appareil (bouton ci-dessous). Le lieu sert à la météo de la parcelle.')}
+          </div>
+          ${champ('station_id', 'Station météo SAM (facultatif)', liste('station_id', `${opt('', d.station_id || '', 'Aucune : météo Open-Meteo seule')}${stations.map(s => opt(s.id, d.station_id || '', `${s.nom}${s.commune ? ` (${s.commune})` : ''}`)).join('')}`), { classe: ' pil-large', aide: 'Les températures, l’humidité et la pluie mesurées par la station remplacent celles d’Open-Meteo.' })}
         </div>
         <div class="pil-actions pil-actions-tight"><button type="button" class="sam-button" data-action="gps">Utiliser ma position</button></div>
       </fieldset>
 
       <fieldset class="pil-card"><legend>Culture</legend>
         <div class="pil-fields">
-          <label class="sam-field">Espèce<select name="culture_id" class="sam-input">${especes}</select></label>
-          <label class="sam-field pil-pleine">Conduite<select name="classe_id" class="sam-input">${cult.classes.map(c => opt(c.id, cl.id, c.nom)).join('')}</select></label>
+          ${champ('culture_id', 'Espèce', liste('culture_id', especes))}
+          ${champ('classe_id', 'Conduite', liste('classe_id', cult.classes.map(c => opt(c.id, cl.id, c.nom)).join('')), { classe: ' pil-pleine', aide: esc(aideConduite) })}
         </div>
-        <p class="pil-aide">${esc(aideConduite)}</p>
         <p class="pil-ref">${esc(decrireConduite(cult, cl))}</p>
         <div class="pil-fields">
-          <label class="sam-field">Profondeur d’enracinement (m)<input name="zr" inputmode="decimal" value="${n(cfg.culture.zr)}"><small class="pil-aide">${annuel ? 'Profondeur atteinte en pleine végétation.' : 'Non fournie par la méthode pour les arbres et la vigne : 0,8 m par défaut, à ajuster (fosse, sondes).'}</small></label>
-          <label class="sam-field">Hauteur de la culture (m)<input name="h" inputmode="decimal" value="${n(cfg.culture.h)}"></label>
+          ${champ('zr', 'Profondeur d’enracinement (m)', saisie('zr', n(cfg.culture.zr)), { aide: annuel ? 'Profondeur atteinte en pleine végétation.' : 'Non fournie par la méthode pour les arbres et la vigne : 0,8 m par défaut, à ajuster (fosse, sondes).' })}
         </div>
         <details class="pil-sub" data-cle="culture"${ouvert('culture')}><summary>Réglages avancés de la culture</summary>
           <div class="pil-fields">
+            ${champ('h', 'Hauteur de la culture (m)', saisie('h', n(cfg.culture.h)), { aide: 'Proposée d’après la conduite : à modifier si vos plantes sont nettement plus hautes ou plus basses. Elle intervient dans l’ajustement au climat et dans l’évaporation du sol.' })}
             ${curseur('p', 'RFU (% de la RU)', cfg.culture.p * 100, { min: 10, max: 90, aide: `Part de la réserve utile que la culture prélève sans difficulté.${finite(cult.p?.p) ? ` Valeur de référence : ${f0(cult.p.p * 100)} %.` : ''}` })}
-            ${annuel ? `<label class="sam-field">Enracinement au semis (m)<input name="zrMin" inputmode="decimal" value="${n(cfg.culture.zrMin)}"></label>` : ''}
-            <label class="sam-field">Coefficient hors saison<input name="kcbHorsSaison" inputmode="decimal" value="${n(cfg.culture.kcbHorsSaison)}"><small class="pil-aide">${annuel ? 'Avant le semis et après la récolte (sol nu : 0,15).' : 'Avant le débourrement et après la chute des feuilles (sol nu ou enherbé).'}</small></label>
-            <label class="sam-field pil-large">Méthode de calcul<select name="methode" class="sam-input">${opt('double', cfg.methode, 'Détaillée : transpiration et évaporation du sol séparées')}${cl.kc ? opt('simple', cfg.methode, 'Simplifiée : coefficient cultural unique (Kc)') : ''}</select><small class="pil-aide">${esc(aideMethode)}</small></label>
+            ${champ('methode', 'Méthode de calcul', liste('methode', `${opt('double', cfg.methode, 'Détaillée : transpiration et évaporation séparées')}${cl.kc ? opt('simple', cfg.methode, 'Simplifiée : coefficient cultural unique (Kc)') : ''}`), { classe: ' pil-large', aide: esc(aideMethode) })}
           </div>
           ${!finite(cult.p?.p) && cult.p?.txt ? '<p class="pil-note">Pas de valeur de référence de RFU pour cette culture : saisissez-en une adaptée.</p>' : ''}
-          <label class="pil-check"><input type="checkbox" name="ajusterClimat"${cfg.culture.ajusterClimat !== false ? ' checked' : ''}> Ajuster les coefficients au vent et à l’humidité du site</label>
+          ${coche('ajusterClimat', 'Ajuster les coefficients au vent et à l’humidité du site', cfg.culture.ajusterClimat !== false, { aide: esc(aideClimat) })}
           <div class="pil-sub2">
-            <label class="pil-check"><input type="checkbox" name="kcbPersoActif" data-bascule="pil-bloc-kcb"${cfg.culture.kcbPerso ? ' checked' : ''}> Coefficients de transpiration personnalisés (calage local)</label>
+            ${coche('kcbPersoActif', 'Coefficients de transpiration personnalisés (calage local)', !!cfg.culture.kcbPerso, { bascule: 'pil-bloc-kcb', aide: 'Pour remplacer les coefficients de la conduite par des valeurs établies sur vos parcelles (essais, mesures). Ces valeurs tenant déjà compte de votre climat, l’ajustement au vent et à l’humidité est alors décoché.' })}
             <div id="pil-bloc-kcb" class="pil-bascule${cache(!!cfg.culture.kcbPerso)}">
-              <p class="pil-aide">Pour remplacer les coefficients de la conduite par des valeurs établies sur vos parcelles (essais, mesures).</p>
               <div class="pil-fields">
-                <label class="sam-field">Au démarrage<input name="kcbIni" inputmode="decimal" value="${n(cfg.culture.kcbPerso?.ini ?? cl.kcb.ini)}"></label>
-                <label class="sam-field">En pleine végétation<input name="kcbMi" inputmode="decimal" value="${n(cfg.culture.kcbPerso?.mi ?? cl.kcb.mid)}"></label>
-                <label class="sam-field">En fin de saison<input name="kcbFin" inputmode="decimal" value="${n(cfg.culture.kcbPerso?.fin ?? cl.kcb.end)}"></label>
+                ${champ('kcbIni', 'Au démarrage', saisie('kcbIni', n(cfg.culture.kcbPerso?.ini ?? cl.kcb.ini)))}
+                ${champ('kcbMi', 'En pleine végétation', saisie('kcbMi', n(cfg.culture.kcbPerso?.mi ?? cl.kcb.mid)))}
+                ${champ('kcbFin', 'En fin de saison', saisie('kcbFin', n(cfg.culture.kcbPerso?.fin ?? cl.kcb.end)))}
               </div>
             </div>
           </div>
           <div class="pil-sub2">
-            <label class="pil-check"><input type="checkbox" name="apActif" data-bascule="pil-bloc-ap"${ap.actif ? ' checked' : ''}> Calculer le coefficient de pleine végétation d’après la couverture mesurée</label>
+            ${coche('apActif', 'Calculer le coefficient de pleine végétation d’après la couverture mesurée', !!ap.actif, { bascule: 'pil-bloc-ap', aide: 'Pour une plantation plus ou moins développée que la conduite choisie : le coefficient de pleine végétation est calculé d’après la part du sol couverte par le feuillage et la hauteur de la culture, avec la densité du feuillage de référence de l’espèce.' })}
             <div id="pil-bloc-ap" class="pil-bascule${cache(!!ap.actif)}">
-              <p class="pil-aide">Pour une plantation plus ou moins développée que la conduite choisie : le coefficient de pleine végétation est calculé d’après la part du sol couverte par le feuillage, sa densité et sa hauteur.</p>
               <div class="pil-fields">
-                <label class="sam-field pil-large">Mesure disponible<select name="apMesure" class="sam-input">${opt('ombre', apMesure, 'Ombre au sol vers midi (le plus simple)')}${opt('feuillage', apMesure, 'Dimensions du feuillage, vu du dessus')}</select></label>
-                <label class="sam-field pil-large">Forme<select name="apForme" class="sam-input">${opt('arbres', ap.forme, 'Arbres isolés')}${opt('rangs', ap.forme, 'Rangs (haie fruitière, vigne palissée)')}</select></label>
+                ${champ('apMesure', 'Mesure disponible', liste('apMesure', `${opt('ombre', apMesure, 'Ombre au sol vers midi (le plus simple)')}${opt('feuillage', apMesure, 'Dimensions du feuillage, vu du dessus')}`), { classe: ' pil-large' })}
+                ${champ('apForme', 'Forme', liste('apForme', `${opt('arbres', ap.forme, 'Arbres isolés')}${opt('rangs', ap.forme, 'Rangs (haie fruitière, vigne palissée)')}`), { classe: ' pil-large' })}
               </div>
               <div class="pil-mesure">
-                <p class="pil-aide">${esc(aideMesure)}</p>
+                <div class="pil-entete pil-sous-titre"><span>Relevés sur la parcelle</span>${q('releves', 'Relevés sur la parcelle')}</div>
+                ${bulle('releves', esc(aideMesure))}
                 <div class="pil-fields">${champsReleve}</div>
                 <p class="pil-aide" id="pil-ap-resultat" aria-live="polite"></p>
               </div>
               <div class="pil-fields">
-                ${curseur('apFc', apMesure === 'ombre' ? 'Sol ombragé vers midi (%)' : 'Sol couvert par le feuillage, vu du dessus (%)', (ap.fc ?? 0.5) * 100, { min: 1, max: 100, aide: 'Calculé à partir des mesures ci-dessus, ou à saisir directement.' })}
+                ${curseur('apFc', apMesure === 'ombre' ? 'Sol ombragé vers midi (%)' : 'Sol couvert par le feuillage, vu du dessus (%)', (ap.fc ?? 0.5) * 100, { min: 1, max: 100, aide: 'Calculé à partir des relevés ci-dessus, ou à saisir directement.' })}
                 ${apMesure === 'feuillage' && apRangs ? `
-                  <label class="sam-field">Hauteur du feuillage (m)<input name="apHaut" inputmode="decimal" value="${n(ap.hauteurCanopee)}"><small class="pil-aide">Partie garnie de feuilles, sans le tronc.</small></label>
-                  <label class="sam-field">Orientation des rangs<select name="apAngle" class="sam-input">${opt(90, ap.angleRang, 'Nord-sud')}${opt(45, ap.angleRang, 'Nord-est / sud-ouest')}${opt(0, ap.angleRang, 'Est-ouest')}</select></label>` : ''}
-                <label class="sam-field">Densité du feuillage (ML)<input name="apMl" inputmode="decimal" value="${n(ap.ml)}"><small class="pil-aide">Pour une même ombre, un feuillage épais transpire plus qu’un feuillage aéré : de 1 (feuillage aéré) à 2 (feuillage épais). Valeur proposée d’après les références de l’espèce : à garder sauf mesures particulières.</small></label>
-                <label class="sam-field">Régulation des stomates (Fr)<input name="apFr" inputmode="decimal" value="${n(ap.fr)}"><small class="pil-aide">1 : la culture transpire librement. Plus faible pour les espèces qui limitent leur transpiration par temps sec (olivier, agrumes).</small></label>
-                <label class="sam-field">Coefficient de l’enherbement<input name="apCouvert" inputmode="decimal" value="${n(ap.kcbCouvert)}" placeholder="vide : sol nu"><small class="pil-aide">Inter-rang enherbé : environ 0,3 à 0,8 selon la densité et l’entretien.</small></label>
+                  ${champ('apHaut', 'Hauteur du feuillage (m)', saisie('apHaut', n(ap.hauteurCanopee)), { aide: 'Partie garnie de feuilles, sans le tronc.' })}
+                  ${champ('apAngle', 'Orientation des rangs', liste('apAngle', `${opt(90, ap.angleRang, 'Nord-sud')}${opt(45, ap.angleRang, 'Nord-est / sud-ouest')}${opt(0, ap.angleRang, 'Est-ouest')}`))}` : ''}
+                ${champ('apCouvert', 'Coefficient de l’enherbement', saisie('apCouvert', n(ap.kcbCouvert), ' placeholder="vide : sol nu"'), { aide: 'Inter-rang enherbé : environ 0,3 à 0,8 selon la densité et l’entretien. Vide : sol nu.' })}
               </div>
             </div>
           </div>
         </details>
       </fieldset>
 
-      <fieldset class="pil-card"><legend>Dates clés de la saison</legend>
-        ${annuel ? '' : `<p class="pil-aide">Dates de l’année ${anneeDe(cfg.stades.debut)}, reprises chaque année.</p>`}
+      <fieldset class="pil-card"><legend>Dates clés de la saison ${q('dates', 'Dates clés de la saison')}</legend>
+        ${bulle('dates', esc(aideDates))}
         <div class="pil-fields">
-          ${champsStades.map((k, i) => `<label class="sam-field">${esc(libStades[i])}<input type="date" name="st_${k}" value="${esc(cfg.stades[k])}" required></label>`).join('')}
+          ${champsStades.map((k, i) => champ(`st_${k}`, libStades[i], `<input type="date" id="pil-st_${k}" name="st_${k}" value="${esc(cfg.stades[k])}" required>`, { aide: esc(aidesStades[i]) })).join('')}
         </div>
+        <p class="pil-aide" id="pil-dates-info" aria-live="polite"></p>
         ${annuel && cult.gdd?.length && cult.temp ? `<div class="pil-gdd">
-          <label class="sam-field">Type de culture<select name="gddType" class="sam-input">${gddOptions}</select></label>
+          ${champ('gddType', 'Type de culture', liste('gddType', gddOptions), { aide: esc(`À partir de la date de semis, avec les degrés-jours (chaleur cumulée au-dessus de ${f0(cult.temp.tbase)} °C) : températures réelles, puis celles de l’année précédente au-delà de 7 jours.`) })}
           <button type="button" class="sam-button" data-action="gdd">Calculer les dates avec les températures</button>
-          <small class="pil-aide">À partir de la date de semis, avec les degrés-jours (chaleur cumulée au-dessus de ${f0(cult.temp.tbase)} °C) : températures réelles, puis celles de l’année précédente au-delà de 7 jours.</small>
         </div>` : ''}
-        <p class="pil-note">Dates proposées à titre indicatif : ajustez-les à vos observations sur la parcelle. Hors de ces dates, aucun apport n’est calculé.</p>
         <div class="pil-fields">
-          <label class="sam-field">Début du calcul<input type="date" name="debutBilan" value="${esc(annuel ? (/^\d{4}-/.test(cfg.debutBilan) ? cfg.debutBilan : addDaysISO(cfg.stades.debut, -30)) : debutBilanAffiche(cfg))}"></label>
+          ${champ('debutBilan', 'Début du calcul', `<input type="date" id="pil-debutBilan" name="debutBilan" value="${esc(annuel ? (/^\d{4}-/.test(cfg.debutBilan) ? cfg.debutBilan : addDaysISO(cfg.stades.debut, -30)) : debutBilanAffiche(cfg))}">`, { aide: annuel ? 'Par défaut un mois avant le semis.' : 'Par défaut le 1er janvier : le bilan suit la recharge du sol par les pluies d’hiver.' })}
           ${curseur('etatInitial', 'Réserve au début du calcul (% de la RU)', (cfg.etatInitial ?? 1) * 100, { min: 0, max: 100, step: 5, aide: '100 % : sol plein, par exemple après les pluies d’hiver.' })}
         </div>
       </fieldset>
 
       <fieldset class="pil-card"><legend>Sol</legend>
         <div class="pil-fields">
-          <label class="sam-field pil-large">Type de sol<select name="texture" class="sam-input">${SOLS.map(s => opt(s.id, cfg.sol.texture, `${s.nom} — RU ≈ ${f1((1000 * (s.thetaFC - s.thetaWP)) / 100)} mm/cm`)).join('')}${Object.entries(SOLS_VOISINS).map(([k, v]) => opt(k, cfg.sol.texture, `${v.nom} — RU ≈ ${f1(ruSol(solParId(k)) / 100)} mm/cm`)).join('')}</select></label>
-          <label class="sam-field">RU mesurée (mm/cm)<input name="ruCm" inputmode="decimal" value="${finite(cfg.sol.ruParM) ? n(cfg.sol.ruParM / 100, 2) : ''}" placeholder="selon le type de sol"><small class="pil-aide">Si elle est connue (analyse, carte des sols).</small></label>
-          ${curseur('cailloux', 'Cailloux (% du volume)', cfg.sol.cailloux || 0, { min: 0, max: 90, step: 5 })}
+          ${champ('texture', 'Type de sol', liste('texture', `${SOLS.map(s => opt(s.id, cfg.sol.texture, `${s.nom} — RU ≈ ${f1((1000 * (s.thetaFC - s.thetaWP)) / 100)} mm/cm`)).join('')}${Object.entries(SOLS_VOISINS).map(([k, v]) => opt(k, cfg.sol.texture, `${v.nom} — RU ≈ ${f1(ruSol(solParId(k)) / 100)} mm/cm`)).join('')}`), { classe: ' pil-large', aide: 'Choisissez le type le plus proche : il fixe la réserve utile (RU), en mm d’eau par cm de sol. Une analyse de sol permet de le déterminer ci-dessous.' })}
+          ${champ('ruCm', 'RU mesurée (mm/cm)', saisie('ruCm', finite(cfg.sol.ruParM) ? n(cfg.sol.ruParM / 100, 2) : '', ' placeholder="selon le type de sol"'), { aide: 'Si elle est connue (analyse, carte des sols) : elle remplace celle du type de sol.' })}
+          ${curseur('cailloux', 'Cailloux (% du volume)', cfg.sol.cailloux || 0, { min: 0, max: 90, step: 5, aide: 'Part du volume de sol occupée par les cailloux : elle réduit d’autant la réserve utile.' })}
         </div>
         <div class="pil-texture">
           <span class="pil-aide">Type de sol d’après une analyse :</span>
-          <input name="argile" inputmode="decimal" placeholder="% argile" class="sam-input">
-          <input name="limon" inputmode="decimal" placeholder="% limon" class="sam-input">
-          <input name="sable" inputmode="decimal" placeholder="% sable" class="sam-input">
+          <input name="argile" inputmode="decimal" placeholder="% argile" class="sam-input" aria-label="Argile (%)">
+          <input name="limon" inputmode="decimal" placeholder="% limon" class="sam-input" aria-label="Limon (%)">
+          <input name="sable" inputmode="decimal" placeholder="% sable" class="sam-input" aria-label="Sable (%)">
           <button type="button" class="sam-button" data-action="texture">Déterminer</button>
         </div>
         <p class="pil-ref" id="pil-ru-txt">${texteRU(cfg)}</p>
-        <details class="pil-sub" data-cle="sol"${ouvert('sol')}><summary>Réglages avancés du sol</summary>
-          <div class="pil-fields">
-            <label class="sam-field">Humidité à la capacité au champ (m³/m³)<input name="thetaFC" inputmode="decimal" value="${n(cfg.sol.thetaFC, 3)}"><small class="pil-aide">Proposée selon le type de sol.</small></label>
-            <label class="sam-field">Humidité au point de flétrissement (m³/m³)<input name="thetaWP" inputmode="decimal" value="${n(cfg.sol.thetaWP, 3)}"><small class="pil-aide">Proposée selon le type de sol.</small></label>
-            <label class="sam-field">Eau facilement évaporable en surface (mm)<input name="rew" inputmode="decimal" value="${n(cfg.sol.rew, 1)}"><small class="pil-aide">Eau que la surface perd à pleine vitesse après une pluie ou une irrigation, avant de sécher et de freiner l’évaporation : environ 2 à 7 mm en sol sableux, 8 à 12 mm en sol argileux. Proposée selon le type de sol : à laisser par défaut.</small></label>
-            <label class="sam-field">Épaisseur de sol qui sèche en surface (m)<input name="ze" inputmode="decimal" value="${n(cfg.sol.ze ?? 0.1)}"><small class="pil-aide">Couche que l’évaporation peut dessécher (0,10 à 0,15 m) ; plus bas, seules les racines prélèvent l’eau. Elle fixe l’eau totale que le sol peut perdre par évaporation. À laisser à 0,10 m sauf sol très argileux (0,15 m).</small></label>
-          </div>
-          <p class="pil-aide">Ces deux derniers réglages servent seulement au calcul de l’évaporation du sol (méthode détaillée).</p>
-        </details>
       </fieldset>
 
       <fieldset class="pil-card"><legend>Irrigation</legend>
         <div class="pil-fields">
-          <label class="sam-field pil-large">Système d’irrigation<select name="systeme" class="sam-input">${SYSTEMES.map(s => opt(s.id, sys?.id, s.nom)).join('')}</select></label>
-          ${curseur('efficience', 'Efficience du réseau (%)', cfg.irrigation.efficience * 100, { min: 30, max: 100, aide: 'Part de l’eau apportée réellement utile aux racines. Valeur proposée à vérifier.' })}
-          <label class="sam-field">Pluviométrie (mm/h)<input name="pluvio" inputmode="decimal" value="${n(cfg.irrigation.pluvio, 3)}" placeholder="pour les durées"><small class="pil-aide">Pour convertir les apports en durée de poste.</small></label>
-          <label class="sam-field">Durée maximale d’un poste (h)<input name="dureeMaxPoste" inputmode="decimal" value="${n(cfg.irrigation.dureeMaxPoste, 1)}" placeholder="facultatif"><small class="pil-aide">Un apport plus long est découpé en plusieurs postes. En goutte-à-goutte et micro-aspersion, elle limite aussi l’apport calculé par jour (12 h si vide), avec la pluviométrie.</small></label>
+          ${champ('systeme', 'Système d’irrigation', liste('systeme', SYSTEMES.map(s => opt(s.id, sys?.id, s.nom)).join('')), { classe: ' pil-large', aide: esc(aideSysteme) })}
+          ${curseur('efficience', 'Efficience du réseau (%)', cfg.irrigation.efficience * 100, { min: 30, max: 100, aide: 'Part de l’eau apportée réellement utile aux racines. Valeur proposée selon le système, à vérifier (état du réseau, uniformité).' })}
+          ${champ('pluvio', 'Pluviométrie (mm/h)', saisie('pluvio', n(cfg.irrigation.pluvio, 3), ' placeholder="pour les durées"'), { aide: 'Pour convertir les apports en durée de poste. Elle se calcule ci-dessous à partir du débit des goutteurs ou du secteur.' })}
+          ${champ('dureeMaxPoste', 'Durée maximale d’un poste (h)', saisie('dureeMaxPoste', n(cfg.irrigation.dureeMaxPoste, 1), ' placeholder="facultatif"'), { aide: 'Un apport plus long est découpé en plusieurs postes. En goutte-à-goutte et micro-aspersion, elle limite aussi l’apport calculé par jour (12 h si vide), avec la pluviométrie.' })}
         </div>
         <details class="pil-sub" data-cle="pluvio"${ouvert('pluvio')}><summary>Calculer la pluviométrie</summary>
           <div class="pil-fields">
-            <label class="sam-field">Débit d’un goutteur ou diffuseur (L/h)<input name="debitLh" inputmode="decimal" value="${n(loc.debitLh, 2)}"></label>
-            <label class="sam-field">Écartement sur le rang (m)<input name="espacement" inputmode="decimal" value="${n(loc.espacement, 2)}"></label>
-            <label class="sam-field">Inter-rang (m)<input name="interRang" inputmode="decimal" value="${n(loc.interRang, 2)}"></label>
-            <label class="sam-field">Goutteurs par emplacement<input name="parPoint" inputmode="decimal" value="${n(loc.parPoint ?? 1, 0)}"></label>
+            ${champ('debitLh', 'Débit d’un goutteur ou diffuseur (L/h)', saisie('debitLh', n(loc.debitLh, 2)))}
+            ${champ('espacement', 'Écartement sur le rang (m)', saisie('espacement', n(loc.espacement, 2)))}
+            ${champ('interRang', 'Inter-rang (m)', saisie('interRang', n(loc.interRang, 2)))}
+            ${champ('parPoint', 'Goutteurs par emplacement', saisie('parPoint', n(loc.parPoint ?? 1, 0)))}
           </div>
           <div class="pil-fields">
-            <label class="sam-field">ou débit du secteur (m³/h)<input name="debitM3h" inputmode="decimal" value="${n(loc.debitM3h, 2)}"></label>
-            <label class="sam-field">surface du secteur (ha)<input name="surfaceSecteur" inputmode="decimal" value="${n(loc.surfaceSecteur, 3)}"></label>
+            ${champ('debitM3h', 'ou débit du secteur (m³/h)', saisie('debitM3h', n(loc.debitM3h, 2)))}
+            ${champ('surfaceSecteur', 'surface du secteur (ha)', saisie('surfaceSecteur', n(loc.surfaceSecteur, 3)))}
           </div>
           <button type="button" class="sam-button" data-action="pluvio">Calculer</button>
         </details>
         <details class="pil-sub" data-cle="irrigation"${ouvert('irrigation')}><summary>Réglages avancés de l’irrigation</summary>
           <div class="pil-fields">
             ${curseur('fractionHumectee', 'Volume de sol humecté (%)', (cfg.irrigation.fractionHumectee ?? 1) * 100, { min: 10, max: 100, step: 5, aide: esc(aideHumecte) })}
-            ${curseur('fw', 'Sol mouillé en surface par l’irrigation (%)', cfg.irrigation.fw * 100, { min: 5, max: 100, aide: esc(aideFw) })}
-            <label class="sam-field">Apport utile maximal par jour (mm)<input name="doseMaxNette" inputmode="decimal" value="${n(cfg.irrigation.doseMaxNette, 1)}" placeholder="facultatif"><small class="pil-aide">Capacité réelle de l’installation : débit de la pompe, tour d’eau, nombre de secteurs. L’apport calculé ne la dépasse pas ; le complément est calculé les jours suivants. Vide, en goutte-à-goutte : pluviométrie × durée maximale d’un poste × efficience.</small></label>
+            ${champ('doseMaxNette', 'Apport utile maximal par jour (mm)', saisie('doseMaxNette', n(cfg.irrigation.doseMaxNette, 1), ' placeholder="facultatif"'), { aide: 'Capacité réelle de l’installation : débit de la pompe, tour d’eau, nombre de secteurs. L’apport calculé ne la dépasse pas ; le complément est calculé les jours suivants. Vide, en goutte-à-goutte : pluviométrie × durée maximale d’un poste × efficience.' })}
           </div>
         </details>
       </fieldset>
 
       <fieldset class="pil-card"><legend>Calcul des apports</legend>
         <div class="pil-fields">
-          <label class="sam-field pil-large">Seuil d’irrigation<select name="strategie" class="sam-input">${Object.entries(SEUILS).map(([k, v]) => opt(k, mode, v)).join('')}</select></label>
+          ${champ('strategie', 'Seuil d’irrigation', liste('strategie', Object.entries(SEUILS).map(([k, v]) => opt(k, mode, v)).join('')), { classe: ' pil-large', aide: '<b>Standard</b> : un apport est calculé quand la RFU est consommée, juste avant que la culture ne commence à manquer d’eau ; apports plus gros et plus espacés. <b>Confort</b> : à la moitié de la RFU ; apports plus petits et plus fréquents, adapté au goutte-à-goutte. <b>Personnalisé</b> : vous fixez la part de la réserve utile consommée, pour une stratégie qui vous est propre (restriction volontaire, calage sur des tensiomètres…).' })}
           ${curseur('mad', 'Seuil personnalisé (% de la RU consommée)', finite(strat.mad) ? strat.mad * 100 : cfg.culture.p * 100, { min: 5, max: 90, id: 'pil-bloc-mad', classe: cache(mode === 'perso'), aide: 'Exemple : 40 % = un apport est calculé quand la culture a consommé 40 % de la réserve utile.' })}
           ${curseur('cible', 'Remplissage visé (%)', clampCible(strat.cible) * 100, { min: 50, max: 100, step: 5, aide: 'Niveau jusqu’auquel l’apport remplit la réserve. 100 % : réserve pleine. En dessous, de la place reste libre pour la pluie (moins de pertes en profondeur).' })}
-          <label class="sam-field">Paillage<select name="paillage" class="sam-input">${opt('aucun', cfg.paillage?.type, 'Aucun')}${opt('plastique', cfg.paillage?.type, 'Film plastique')}${opt('organique', cfg.paillage?.type, 'Paillage organique (paille, broyat)')}</select></label>
+          ${champ('paillage', 'Paillage', liste('paillage', `${opt('aucun', cfg.paillage?.type, 'Aucun')}${opt('plastique', cfg.paillage?.type, 'Film plastique')}${opt('organique', cfg.paillage?.type, 'Paillage organique (paille, broyat)')}`), { aide: 'Un paillage réduit l’évaporation du sol : fortement sous film plastique, en partie sous paillage organique. Il ne change pas la transpiration de la culture.' })}
           ${curseur('couverture', 'Part du sol paillée (%)', cfg.paillage?.couverture || 0, { min: 0, max: 100, step: 5, id: 'pil-bloc-paillage', classe: cache(paille) })}
         </div>
         <div id="pil-bloc-ajusterp" class="${cache(mode === 'fao').trim()}">
-          <label class="pil-check"><input type="checkbox" name="ajusterP"${strat.ajusterP !== false ? ' checked' : ''}> Adapter le seuil standard à la chaleur du jour</label>
-          <p class="pil-aide">Coché : la RFU, donc le seuil, diminue un peu par forte chaleur et augmente par temps frais. Décoché : le seuil reste fixe toute la saison.</p>
+          ${coche('ajusterP', 'Adapter le seuil standard à la chaleur du jour', strat.ajusterP !== false, { aide: 'Coché : la RFU, donc le seuil, diminue un peu par forte chaleur et augmente par temps frais (méthode FAO). Décoché : le seuil reste fixe toute la saison.' })}
         </div>
         <p class="pil-ref pil-ref-texte" id="pil-seuils-mm">${texteSeuils(cfg, annuel)}</p>
-        <p class="pil-aide"><b>Standard</b> : un apport est calculé quand la RFU est consommée, juste avant que la culture ne commence à manquer d’eau ; apports plus gros et plus espacés. <b>Confort</b> : à la moitié de la RFU ; apports plus petits et plus fréquents, adapté au goutte-à-goutte. <b>Personnalisé</b> : vous fixez la part de la réserve utile consommée, pour une stratégie qui vous est propre (restriction volontaire, calage sur des tensiomètres…).</p>
       </fieldset>
       <div class="pil-actions pil-actions-end"><button type="submit" class="sam-button sam-button-primary">Enregistrer</button></div>
     </form>`;
@@ -1303,19 +1346,19 @@ export async function mount(root, ctx) {
     const garde = (name, avant) => (f.elements[name] ? nv(name) : (avant ?? null));
     d.nom = v('nom').trim();
     d.surface_ha = nv('surface_ha');
-    d.lieu = v('lieu').trim();
-    d.latitude = nv('latitude');
-    d.longitude = nv('longitude');
-    d.altitude = nv('altitude');
+    // Le lieu et ses coordonnées ne changent qu'au choix d'un lieu dans la liste ou par la position de l'appareil
     d.station_id = v('station_id') || null;
     const cult = parId(d.culture_id);
+    const cl = classeDe(cult, d.classe_id);
     const annuel = estAnnuel(cult);
+    const def = defautsCulture(cult, cl);
     const cu = cfg.culture;
     cu.p = nv('p', cu.p * 100) / 100;
     cu.h = nv('h', cu.h);
     cu.zr = nv('zr', cu.zr);
-    if (annuel) cu.zrMin = nv('zrMin', cu.zrMin);
-    cu.kcbHorsSaison = nv('kcbHorsSaison', cu.kcbHorsSaison);
+    // Réglages retirés du formulaire : valeurs par défaut de l'espèce
+    cu.zrMin = def.zrMin;
+    cu.kcbHorsSaison = def.kcbHorsSaison;
     cfg.methode = v('methode') || 'double';
     cu.kcbPerso = ck('kcbPersoActif') ? { ini: nv('kcbIni'), mi: nv('kcbMi'), fin: nv('kcbFin') } : null;
     cu.ajusterClimat = ck('ajusterClimat');
@@ -1329,8 +1372,8 @@ export async function mount(root, ctx) {
       hauteurCanopee: f.elements.apHaut ? nv('apHaut', apAvant.hauteurCanopee ?? cu.h) : (apAvant.hauteurCanopee ?? cu.h),
       largeur: f.elements.apLarg ? nv('apLarg', apAvant.largeur ?? 1.5) : (apAvant.largeur ?? 1.5),
       angleRang: f.elements.apAngle ? nv('apAngle', 90) : (apAvant.angleRang ?? 90),
-      ml: nv('apMl', apAvant.ml ?? 1.5),
-      fr: nv('apFr', apAvant.fr ?? 1),
+      ml: def.ap.ml,
+      fr: def.ap.fr,
       kcbCouvert: nv('apCouvert'),
       releve: {
         largeur: garde('apRelLarg', relAvant.largeur),
@@ -1343,17 +1386,17 @@ export async function mount(root, ctx) {
     const db = v('debutBilan');
     if (db) cfg.debutBilan = annuel ? db : db.slice(5);
     cfg.etatInitial = Math.min(1, Math.max(0, nv('etatInitial', 100) / 100));
+    // Sol : humidités et évaporation d'après le type de sol (réglages retirés du formulaire)
     cfg.sol.texture = v('texture');
-    cfg.sol.thetaFC = nv('thetaFC', cfg.sol.thetaFC);
-    cfg.sol.thetaWP = nv('thetaWP', cfg.sol.thetaWP);
-    cfg.sol.rew = nv('rew', cfg.sol.rew);
-    cfg.sol.ze = nv('ze', 0.1);
+    const solRef = solParId(cfg.sol.texture);
+    if (solRef) Object.assign(cfg.sol, { thetaFC: solRef.thetaFC, thetaWP: solRef.thetaWP, rew: solRef.rewDefaut });
+    cfg.sol.ze = 0.1;
     const ruCm = nv('ruCm');
     cfg.sol.ruParM = finite(ruCm) ? ruCm * 100 : null;
     cfg.sol.cailloux = Math.min(90, Math.max(0, nv('cailloux', 0)));
     const irr = cfg.irrigation;
     irr.systeme = v('systeme');
-    irr.fw = nv('fw', irr.fw * 100) / 100;
+    irr.fw = systemeParId(irr.systeme)?.fwDefaut ?? irr.fw;
     irr.efficience = nv('efficience', irr.efficience * 100) / 100;
     irr.pluvio = nv('pluvio');
     irr.dureeMaxPoste = nv('dureeMaxPoste');
@@ -1371,16 +1414,17 @@ export async function mount(root, ctx) {
     return d;
   }
 
-  function erreursParcelle(d) {
+  /** Erreurs bloquantes ; « lieuSaisi » : texte du champ Lieu (doit correspondre au lieu choisi). */
+  function erreursParcelle(d, lieuSaisi = null) {
     const e = [];
     const cfg = d.config;
     if (!d.nom) e.push('Donnez un nom à la parcelle.');
-    if (!finite(d.latitude) || Math.abs(d.latitude) > 90 || !finite(d.longitude) || Math.abs(d.longitude) > 180) e.push('Position de la parcelle invalide : choisissez une commune ou saisissez latitude et longitude.');
+    if (!finite(d.latitude) || Math.abs(d.latitude) > 90 || !finite(d.longitude) || Math.abs(d.longitude) > 180) e.push('Choisissez le lieu de la parcelle : recherchez-le dans la liste ou utilisez votre position.');
+    else if (lieuSaisi !== null && lieuSaisi.trim() !== (d.lieu || '').trim()) e.push('Lieu : choisissez-le dans la liste proposée (ou utilisez votre position).');
     try { C.stadesDepuisDates(cfg.stades); } catch { e.push('Dates de la saison : elles doivent se suivre dans l’ordre.'); }
-    if (!(cfg.sol.thetaFC > cfg.sol.thetaWP && cfg.sol.thetaWP >= 0 && cfg.sol.thetaFC < 0.7)) e.push('Sol : l’humidité à la capacité au champ doit dépasser celle du point de flétrissement.');
     if (!(cfg.culture.p > 0.05 && cfg.culture.p < 0.95)) e.push('La RFU doit être comprise entre 5 et 95 % de la RU.');
     if (!(cfg.culture.zr > 0.05 && cfg.culture.zr <= 5)) e.push('Profondeur d’enracinement invalide.');
-    if (!(cfg.irrigation.fw > 0 && cfg.irrigation.fw <= 1)) e.push('Sol mouillé en surface par l’irrigation : entre 1 et 100 %.');
+    if (!(cfg.culture.h > 0.05 && cfg.culture.h <= 30)) e.push('Hauteur de la culture invalide.');
     if (!(cfg.irrigation.efficience >= 0.3 && cfg.irrigation.efficience <= 1)) e.push('L’efficience du réseau doit être comprise entre 30 et 100 %.');
     if (cfg.culture.kcbPerso && ['ini', 'mi', 'fin'].some(k => !(cfg.culture.kcbPerso[k] >= 0 && cfg.culture.kcbPerso[k] <= 2))) e.push('Coefficients personnalisés invalides (entre 0 et 2).');
     if (cfg.strategie.mode === 'perso' && !(cfg.strategie.mad > 0.02 && cfg.strategie.mad < 0.95)) e.push('Seuil personnalisé : entre 2 et 95 % de la RU.');
@@ -1404,6 +1448,19 @@ export async function mount(root, ctx) {
   function lierFormulaire() {
     const f = $('#pil-form');
     const rafraichir = () => { lireFormulaire(); renderParcelle(); };
+
+    // Boutons « ? » : afficher ou masquer l'aide
+    f.addEventListener('click', e => {
+      const b = e.target.closest('.pil-q');
+      if (!b) return;
+      e.preventDefault();
+      const t = document.getElementById(b.getAttribute('aria-controls'));
+      if (!t) return;
+      const afficher = t.hidden;
+      t.hidden = !afficher;
+      b.setAttribute('aria-expanded', String(afficher));
+    });
+
     f.elements.culture_id.addEventListener('change', () => { lireFormulaire(); changerCulture(parId(f.elements.culture_id.value)); });
     f.elements.classe_id.addEventListener('change', () => {
       lireFormulaire();
@@ -1421,8 +1478,7 @@ export async function mount(root, ctx) {
     });
     f.elements.texture.addEventListener('change', () => {
       lireFormulaire();
-      const s = solParId(f.elements.texture.value);
-      Object.assign(S.brouillon.config.sol, { thetaFC: s.thetaFC, thetaWP: s.thetaWP, rew: s.rewDefaut, ruParM: null });
+      S.brouillon.config.sol.ruParM = null;
       renderParcelle();
     });
     f.elements.systeme.addEventListener('change', () => {
@@ -1452,6 +1508,8 @@ export async function mount(root, ctx) {
     f.querySelectorAll('input[type="checkbox"][data-bascule]').forEach(c => c.addEventListener('change', () => {
       $(`#${c.dataset.bascule}`)?.classList.toggle('hidden', !c.checked);
     }));
+    // Coefficients personnalisés (issus d'essais locaux) : pas d'ajustement au climat par défaut
+    f.elements.kcbPersoActif.addEventListener('change', () => { f.elements.ajusterClimat.checked = !f.elements.kcbPersoActif.checked; });
 
     // Réserve utile et seuils en mm, recalculés pendant la saisie
     const majCalculs = () => {
@@ -1459,7 +1517,7 @@ export async function mount(root, ctx) {
       $('#pil-ru-txt').innerHTML = texteRU(d.config);
       $('#pil-seuils-mm').innerHTML = texteSeuils(d.config, estAnnuel(parId(d.culture_id)));
     };
-    for (const name of ['thetaFC', 'thetaWP', 'zr', 'p', 'ruCm', 'cailloux', 'fractionHumectee', 'mad']) {
+    for (const name of ['zr', 'p', 'ruCm', 'cailloux', 'fractionHumectee', 'mad']) {
       f.elements[name]?.addEventListener('input', majCalculs);
     }
     f.elements.ajusterP?.addEventListener('change', majCalculs);
@@ -1472,6 +1530,30 @@ export async function mount(root, ctx) {
     f.elements.paillage.addEventListener('change', () => {
       $('#pil-bloc-paillage').classList.toggle('hidden', f.elements.paillage.value === 'aucun');
     });
+
+    // Dates : changer la première ou la dernière recale les dates intermédiaires dans les mêmes
+    // proportions, sauf si elles ont été corrigées (elles ne suivent plus ces proportions)
+    const bornes = { debut: f.elements.st_debut.value, fin: f.elements.st_fin.value };
+    const milieu = ['finIni', 'finDev', 'finMi'];
+    const recaler = () => {
+      const cult = parId(S.brouillon.culture_id);
+      const val = k => f.elements[`st_${k}`].value;
+      const info = $('#pil-dates-info');
+      if (!val('debut') || !val('fin')) return;
+      const avant = datesIntermediaires(cult, bornes.debut, bornes.fin);
+      const auto = avant && milieu.every(k => val(k) && Math.abs(C.ecartJours(avant[k], val(k))) <= 1);
+      const apres = datesIntermediaires(cult, val('debut'), val('fin'));
+      if (auto && apres) {
+        milieu.forEach(k => { f.elements[`st_${k}`].value = apres[k]; });
+        info.textContent = 'Dates intermédiaires recalculées dans les mêmes proportions : corrigez-les si vous les avez observées.';
+      } else if (!auto) {
+        info.textContent = 'Dates intermédiaires conservées (vous les aviez corrigées).';
+      }
+      bornes.debut = val('debut');
+      bornes.fin = val('fin');
+    };
+    f.elements.st_debut.addEventListener('change', recaler);
+    f.elements.st_fin.addEventListener('change', recaler);
 
     // Couverture mesurée : champs selon la mesure et la forme ; pourcentage calculé à la saisie
     f.elements.apMesure?.addEventListener('change', rafraichir);
@@ -1489,18 +1571,28 @@ export async function mount(root, ctx) {
       f.elements[name]?.addEventListener('input', majCouverture);
     }
 
-    // Recherche de commune
+    // Lieu : recherche dans le champ ; le lieu n'est retenu qu'une fois choisi dans la liste
     const lieu = f.elements.lieu;
     const res = $('#pil-lieu-res');
+    const etat = $('#pil-lieu-etat');
+    const majEtat = () => {
+      const d = S.brouillon;
+      const ok = finite(d.latitude) && finite(d.longitude) && lieu.value.trim() === (d.lieu || '').trim();
+      etat.textContent = ok ? `Lieu retenu : ${d.lieu || 'position de l’appareil'}` : 'Choisissez le lieu dans la liste (ou utilisez votre position).';
+      etat.classList.toggle('is-erreur', !ok);
+    };
     let t = null;
     lieu.addEventListener('input', () => {
+      majEtat();
       clearTimeout(t);
       const q = lieu.value.trim();
       if (q.length < 2) { res.innerHTML = ''; return; }
       t = setTimeout(async () => {
         try {
           const list = await searchPlaces(q);
-          res.innerHTML = list.map((pl, i) => `<button type="button" data-i="${i}">${esc(pl.name)} <small>${esc([pl.postcode, pl.admin2].filter(Boolean).join(' · '))}</small></button>`).join('');
+          res.innerHTML = list.length
+            ? list.map((pl, i) => `<button type="button" data-i="${i}">${esc(pl.name)} <small>${esc([pl.postcode, pl.admin2].filter(Boolean).join(' · '))}</small></button>`).join('')
+            : '<span class="pil-muted">Aucun lieu trouvé.</span>';
           res.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
             const pl = list[Number(b.dataset.i)];
             lireFormulaire();
@@ -1510,11 +1602,18 @@ export async function mount(root, ctx) {
         } catch { res.innerHTML = '<span class="pil-muted">Recherche indisponible.</span>'; }
       }, 300);
     });
+    // Entrée dans le champ Lieu : choisit le premier lieu proposé au lieu d'enregistrer
+    lieu.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      res.querySelector('button')?.click();
+    });
+
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const d = lireFormulaire();
       const msg = $('#pil-form-msg');
-      const errs = erreursParcelle(d);
+      const errs = erreursParcelle(d, lieu.value);
       if (errs.length) { msg.innerHTML = errs.map(esc).join('<br>'); msg.classList.add('is-error'); msg.scrollIntoView({ block: 'center' }); return; }
       try {
         const row = await store.enregistrerParcelle({
@@ -1560,7 +1659,7 @@ export async function mount(root, ctx) {
     const cult = parId(d.culture_id);
     const g = cult.gdd[Number(f.elements.gddType.value) || 0];
     const semis = d.config.stades.debut;
-    if (!finite(d.latitude) || !finite(d.longitude)) { msg.textContent = 'Renseignez d’abord la position de la parcelle.'; return; }
+    if (!finite(d.latitude) || !finite(d.longitude)) { msg.textContent = 'Choisissez d’abord le lieu de la parcelle.'; return; }
     msg.classList.remove('is-error');
     msg.textContent = 'Calcul des degrés-jours…';
     try {
@@ -1635,16 +1734,18 @@ export async function mount(root, ctx) {
         'Standard : un apport est calculé quand la RFU est consommée, juste avant que la culture ne commence à manquer d’eau ; les apports sont plus gros et plus espacés. Confort : à la moitié de la RFU ; apports plus petits et plus fréquents, adapté au goutte-à-goutte. Personnalisé : vous fixez la part de la réserve utile consommée (par exemple pour une restriction volontaire ou un calage sur des tensiomètres). Les valeurs en mm pour votre parcelle sont affichées sous le choix du seuil. Le remplissage visé fixe jusqu’où l’apport remplit la réserve : en dessous de 100 %, de la place reste libre pour la pluie.'],
       ['Comment mesurer le sol ombragé ?',
         'Par temps ensoleillé, en pleine végétation, vers 13 h 30 – 14 h en été (heure légale, quand le soleil est au plus haut). En rangs (haie fruitière, vigne palissée) : mesurez la largeur de la bande d’ombre au sol, perpendiculairement au rang, à plusieurs endroits, et divisez-la par l’inter-rang (1,8 m d’ombre pour 4 m d’inter-rang : 45 %). En arbres isolés : mesurez le diamètre moyen de l’ombre d’un arbre ; la part ombragée est la surface de l’ombre divisée par la surface occupée par un arbre (distance sur le rang × inter-rang). L’onglet Parcelle fait ce calcul. Si vous ne pouvez pas mesurer l’ombre, choisissez « Dimensions du feuillage » : l’outil déduit l’ombre de midi de la largeur et de la hauteur du feuillage et de l’orientation des rangs.'],
-      ['Volume de sol humecté et sol mouillé en surface : quelle différence ?',
-        'Le volume de sol humecté est la part du sol, en profondeur, réellement mouillée par l’irrigation (le « bulbe » sous les goutteurs, où se concentrent les racines actives). Il réduit la réserve prise en compte : avec 40 % de volume humecté, une réserve utile de 100 mm compte pour 40 mm, d’où des apports plus petits et plus fréquents. Valeurs courantes : 30 à 50 % en goutte-à-goutte, 50 à 80 % en micro-aspersion, 100 % en aspersion. Le sol mouillé en surface sert seulement au calcul de l’évaporation du sol.'],
+      ['À quoi sert le volume de sol humecté ?',
+        'C’est la part du sol, en profondeur, réellement mouillée par l’irrigation (le « bulbe » sous les goutteurs, où se concentrent les racines actives). Il réduit la réserve prise en compte : avec 40 % de volume humecté, une réserve utile de 100 mm compte pour 40 mm, d’où des apports plus petits et plus fréquents. Valeurs courantes : 30 à 50 % en goutte-à-goutte, 50 à 80 % en micro-aspersion, 100 % en aspersion. La part de la surface du sol mouillée à chaque irrigation, elle, est fixée selon le système et sert seulement au calcul de l’évaporation du sol.'],
+      ['Que fait « Ajuster les coefficients au vent et à l’humidité du site » ?',
+        'Les coefficients de référence valent pour un vent moyen de 2 m/s et une humidité minimale de l’air de 45 %. Quand l’air est plus sec et plus venté, une culture haute (verger, vigne) consomme davantage par rapport au gazon de référence de l’ET₀ ; quand il est humide et calme, elle consomme moins. L’outil corrige donc les coefficients de pleine végétation et de fin de saison avec le vent et l’humidité de votre période de pleine végétation. Pour un pommier : +8 % avec 2,5 m/s et 35 % d’humidité, +17 % avec 3,5 m/s et 30 %, −8 % avec 1,5 m/s et 55 %. La correction est environ deux fois plus faible pour des légumes bas. En été, le besoin d’irrigation varie à peu près du même pourcentage. La case est décochée automatiquement avec des coefficients personnalisés issus de vos essais, qui tiennent déjà compte de votre climat.'],
       ['À quoi servent la durée maximale d’un poste et l’apport utile maximal par jour ?',
         'La durée maximale d’un poste découpe un apport trop long en plusieurs postes (par exemple 2 postes de 10 h). L’apport utile maximal par jour représente la capacité de l’installation (débit de la pompe, tour d’eau, nombre de secteurs) : l’apport calculé ne la dépasse pas, et le complément est calculé les jours suivants. En goutte-à-goutte et micro-aspersion, si ce champ est vide, l’outil prend pluviométrie × durée maximale d’un poste (12 h si elle est vide) × efficience.'],
       ['La pluie prévue est-elle fiable ?',
         'Les prévisions de pluie sont assez fiables à 1 ou 2 jours, beaucoup moins au-delà : la pluie peut tomber un autre jour, être plus faible ou ne pas tomber du tout. L’outil compte la pluie telle qu’annoncée et signale dans l’onglet Bilan les pluies prévues à plus de 2 jours. Chaque jour, le calcul est refait avec la pluie réellement tombée (station SAM ou Open-Meteo). Vous pouvez aussi saisir le relevé de votre pluviomètre dans l’onglet Irrigations et pluies.'],
       ['Que faire si les dates de saison ne correspondent pas à ma parcelle ?',
-        'Les dates proposées sont indicatives. Corrigez-les dans l’onglet Parcelle, rubrique Dates clés de la saison, d’après vos observations (débourrement, chute des feuilles, semis, récolte). Pour les arbres et la vigne, elles sont reprises chaque année. Hors de ces dates, aucun apport n’est calculé et le bilan suit la recharge du sol par les pluies. L’onglet Bilan signale les dates très éloignées de celles proposées pour l’espèce.'],
-      ['Faut-il modifier l’eau facilement évaporable et l’épaisseur de sol qui sèche ?',
-        'En général, non. Ces deux valeurs servent seulement au calcul de l’évaporation du sol et sont proposées selon le type de sol : eau facilement évaporable d’environ 2 à 7 mm en sol sableux et 8 à 12 mm en sol argileux, épaisseur de 0,10 à 0,15 m. Elles sont rarement mesurées.']
+        'Les dates proposées sont indicatives. Corrigez-les dans l’onglet Parcelle, rubrique Dates clés de la saison, d’après vos observations : le « ? » à côté de chaque date indique ce qu’il faut observer. Quand vous changez la première ou la dernière date, les dates intermédiaires se recalent dans les mêmes proportions, sauf si vous les avez corrigées vous-même. Les deux dates du milieu (feuillage complet, début du jaunissement) comptent le plus : elles encadrent la période de plus forte consommation. Pour les arbres et la vigne, les dates sont reprises chaque année. Hors de la saison, aucun apport n’est calculé et le bilan suit la recharge du sol par les pluies. L’onglet Bilan signale les dates très éloignées de celles proposées pour l’espèce.'],
+      ['Pourquoi certains réglages ne sont-ils plus demandés ?',
+        'Les humidités du sol à la capacité au champ et au point de flétrissement, l’eau facilement évaporable et l’épaisseur de sol qui sèche viennent du type de sol ; une réserve utile mesurée se saisit dans « RU mesurée ». La part du sol mouillée en surface vient du système d’irrigation. La densité du feuillage et la régulation des stomates, l’enracinement au semis et le coefficient hors saison viennent des références de l’espèce. Ce sont des valeurs qu’on ne mesure pas sur le terrain : l’outil les applique automatiquement.']
     ];
     panel.innerHTML = `<div class="pil-card"><h3>Lire le bilan</h3>
       <p>Chaque jour, l’outil compte l’eau qui entre dans le sol (pluie, irrigation) et celle qui en sort (consommation de la culture, évaporation, drainage). Il en déduit l’eau encore disponible pour les racines. Quand cette réserve descend jusqu’au seuil d’irrigation, il calcule l’apport qui la remplirait de nouveau.</p>
@@ -1742,7 +1843,7 @@ export async function mount(root, ctx) {
       } else if (action === 'gps') {
         const pl = await locateMe();
         lireFormulaire();
-        Object.assign(S.brouillon, { latitude: pl.latitude, longitude: pl.longitude, lieu: pl.name || S.brouillon.lieu });
+        Object.assign(S.brouillon, { latitude: pl.latitude, longitude: pl.longitude, altitude: null, lieu: pl.name || 'Ma position' });
         renderParcelle();
       } else if (action === 'texture') {
         const f = $('#pil-form');
