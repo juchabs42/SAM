@@ -40,6 +40,9 @@
 .tool-donnees .don-station-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 18px; margin-bottom: 16px; }
 .tool-donnees .don-station-title { min-width: 0; }
 .tool-donnees .don-station-title h2 { margin: 0; font-size: 1.4rem; letter-spacing: -.01em; }
+.tool-donnees .don-station-name-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.tool-donnees .don-forecast svg { width: 17px; height: 17px; flex: none; }
+.tool-donnees .don-forecast:disabled { cursor: not-allowed; }
 .tool-donnees .don-station-sub { margin: 3px 0 0; color: var(--sam-muted); font-size: .88rem; }
 .tool-donnees .don-station-sub:empty { display: none; }
 .tool-donnees .don-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -136,7 +139,27 @@
 .tool-donnees .don-more { display: flex; width: min(100%, 320px); margin: 14px auto 0; }
 
 /* Maladies / ravageurs (RIMpro) */
-.tool-donnees .don-rim-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.tool-donnees .don-rim-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; margin-bottom: 12px; }
+.tool-donnees .don-rim-models { display: grid; flex: 1 1 520px; min-width: 0; gap: 8px; }
+.tool-donnees .don-rim-group { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.tool-donnees .don-rim-group-label { flex: none; width: 82px; color: var(--sam-muted); font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.tool-donnees .don-rim-chips { display: flex; flex: 1 1 0; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.tool-donnees .don-rim-chip {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--sam-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--sam-ink-2);
+  font: inherit;
+  font-size: .84rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.tool-donnees .don-rim-chip:hover { border-color: var(--sam-red-700); color: var(--sam-red-700); }
+.tool-donnees .don-rim-chip.is-active { border-color: var(--sam-red-700); background: var(--sam-red-700); color: #fff; }
+.tool-donnees .don-rim-chip:focus-visible { outline: 2px solid var(--sam-red-700); outline-offset: 2px; }
+.tool-donnees .don-rim-select { display: none; }
 .tool-donnees .don-rim-frame { position: relative; height: min(78vh, 760px); min-height: 480px; border: 1px solid var(--sam-line); border-radius: 10px; overflow: hidden; background: var(--sam-bg-soft); }
 .tool-donnees .don-rim-frame iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
 .tool-donnees .don-rim-frame.is-loading iframe { visibility: hidden; }
@@ -200,6 +223,11 @@
   .tool-donnees .don-chart.is-short { height: 220px; }
   .tool-donnees .don-form-row { grid-template-columns: 1fr 1fr; }
   .tool-donnees .don-rim-frame { height: 70vh; min-height: 420px; }
+  /* Téléphone : liste déroulante des modèles plutôt que 14 boutons */
+  .tool-donnees .don-rim-models { display: none; }
+  .tool-donnees .don-rim-select { display: grid; flex: 1 1 100%; gap: 6px; color: var(--sam-muted); font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .tool-donnees .don-rim-select select { width: 100%; min-height: 46px; padding: 0 12px; border: 1px solid var(--sam-line); border-radius: 10px; background: #fff; color: var(--sam-ink); font: inherit; font-size: 1rem; font-weight: 650; letter-spacing: 0; text-transform: none; }
+  .tool-donnees .don-rim-head > .don-btn { flex: 1 1 100%; }
   /* Résumé journalier en cartes */
   .tool-donnees .don-table thead { display: none; }
   .tool-donnees .don-table, .tool-donnees .don-table tbody, .tool-donnees .don-table tr, .tool-donnees .don-table td { display: block; width: 100%; }

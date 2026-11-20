@@ -75,8 +75,8 @@ export async function mount(root, ctx) {
   let latestLoaded = false;
 
   $('carteHint').textContent = canHover
-    ? 'Survolez une station pour voir ses dernières mesures, cliquez dessus pour ouvrir ses données ; une station R ouvre directement ses modèles RIMpro (tavelure, carpocapse). Les pastilles numérotées regroupent des stations voisines : cliquez pour zoomer.'
-    : 'Touchez une station pour voir ses dernières mesures et ouvrir ses données ; une station R ouvre directement ses modèles RIMpro (tavelure, carpocapse). Les pastilles numérotées regroupent des stations voisines : touchez pour zoomer.';
+    ? 'Survolez une station pour voir ses dernières mesures, cliquez dessus pour ouvrir ses données ; une station R ouvre directement ses modèles RIMpro (maladies et ravageurs). Les pastilles numérotées regroupent des stations voisines : cliquez pour zoomer.'
+    : 'Touchez une station pour voir ses dernières mesures et ouvrir ses données ; une station R ouvre directement ses modèles RIMpro (maladies et ravageurs). Les pastilles numérotées regroupent des stations voisines : touchez pour zoomer.';
 
   // ---------------------------------------------------------------------------
   // Données
@@ -144,7 +144,7 @@ export async function mount(root, ctx) {
       ${sub ? `<span class="carte-tip-sub">${escapeHtml(sub)}</span>` : ''}
       <span class="carte-tip-state is-${state.key}">${escapeHtml(state.label)}${escapeHtml(when)}</span>
       ${hasRimpro(station)
-        ? '<span class="carte-tip-rimpro is-on"><b>R</b>Équipée RIMpro : modèles tavelure et carpocapse</span>'
+        ? '<span class="carte-tip-rimpro is-on"><b>R</b>Équipée RIMpro : modèles maladies et ravageurs</span>'
         : '<span class="carte-tip-rimpro">Pas de RIMpro sur cette station</span>'}
       ${values}
       ${action}

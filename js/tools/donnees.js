@@ -30,10 +30,65 @@ const FAMILIES = {
   humect: { title: 'Humectation foliaire', unit: '%', hint: '', test: code => code === 'hum' }
 };
 const IGNORED = new Set(['bat', 't1', 'hyg1', 'pluv']);
-const RIMPRO_MODELS = [
-  { id: 'venturia', label: 'Tavelure', path: 'venturia.xhtml' },
-  { id: 'cydia', label: 'Carpocapse', path: 'cydia.xhtml' }
+// Modèles RIMpro publiés pour les stations SudExpé (pages rimpro.eu vérifiées le 20/11/2026 ;
+// l'hoplocampe existe chez RIMpro mais sa page renvoie une erreur : non proposé).
+const RIMPRO_GROUPS = [
+  { label: 'Maladies', models: [
+    { id: 'venturia', label: 'Tavelure du pommier', path: 'venturia.xhtml' },
+    { id: 'venturia-pyrina', label: 'Tavelure du poirier', path: 'venturiaPyrinaV2.xhtml' },
+    { id: 'podosphaera', label: 'Oïdium du pommier', path: 'podosphaera.xhtml' },
+    { id: 'erwinia', label: 'Feu bactérien', path: 'erwinia.xhtml' },
+    { id: 'neonectria', label: 'Chancre européen', path: 'neonectria.xhtml' },
+    { id: 'marssonina', label: 'Marssonina', path: 'marssonina.xhtml' },
+    { id: 'stemphylium', label: 'Stemphyliose du poirier', path: 'stemphylium.xhtml' },
+    { id: 'monilinia', label: 'Moniliose', path: 'monilinia.xhtml' },
+    { id: 'blumeriella', label: 'Cylindrosporiose du cerisier', path: 'blumeriella.xhtml' }
+  ] },
+  { label: 'Ravageurs', models: [
+    { id: 'cydia', label: 'Carpocapse', path: 'cydia.xhtml' },
+    { id: 'dysaphis', label: 'Puceron cendré', path: 'dysaphis.xhtml' },
+    { id: 'psylla', label: 'Psylle du poirier', path: 'psylla.xhtml' }
+  ] },
+  { label: 'Vigne', models: [
+    { id: 'wine', label: 'Mildiou, oïdium, black-rot', path: 'wine.xhtml' },
+    { id: 'lobesia', label: 'Eudémis', path: 'lobesia.xhtml' }
+  ] }
 ];
+const RIMPRO_MODELS = RIMPRO_GROUPS.flatMap(group => group.models);
+
+// Départements du réseau (commune saisie « Nîmes (30) ») → lieu des prévisions météo.
+const DEPARTEMENTS = {
+  '04': ['Alpes-de-Haute-Provence', 'Provence-Alpes-Côte d’Azur'], '05': ['Hautes-Alpes', 'Provence-Alpes-Côte d’Azur'],
+  '06': ['Alpes-Maritimes', 'Provence-Alpes-Côte d’Azur'], '07': ['Ardèche', 'Auvergne-Rhône-Alpes'],
+  '09': ['Ariège', 'Occitanie'], '11': ['Aude', 'Occitanie'], '12': ['Aveyron', 'Occitanie'],
+  '13': ['Bouches-du-Rhône', 'Provence-Alpes-Côte d’Azur'], '26': ['Drôme', 'Auvergne-Rhône-Alpes'],
+  '30': ['Gard', 'Occitanie'], '31': ['Haute-Garonne', 'Occitanie'], '32': ['Gers', 'Occitanie'],
+  '34': ['Hérault', 'Occitanie'], '38': ['Isère', 'Auvergne-Rhône-Alpes'], '46': ['Lot', 'Occitanie'],
+  '47': ['Lot-et-Garonne', 'Nouvelle-Aquitaine'], '48': ['Lozère', 'Occitanie'], '65': ['Hautes-Pyrénées', 'Occitanie'],
+  '66': ['Pyrénées-Orientales', 'Occitanie'], '81': ['Tarn', 'Occitanie'], '82': ['Tarn-et-Garonne', 'Occitanie'],
+  '83': ['Var', 'Provence-Alpes-Côte d’Azur'], '84': ['Vaucluse', 'Provence-Alpes-Côte d’Azur']
+};
+
+/** Lieu des prévisions météo = position exacte de la station, nommé d'après sa commune. */
+function stationPlace(station) {
+  if (!station || station.latitude == null || station.longitude == null || station.latitude === '' || station.longitude === '') return null;
+  const latitude = Number(station.latitude);
+  const longitude = Number(station.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  const match = String(station.commune || '').trim().match(/^(.*?)\s*\((\d{2,3}|2A|2B)\)\s*$/i);
+  const name = (match ? match[1] : String(station.commune || '').trim()) || station.nom;
+  const [admin2, admin1] = DEPARTEMENTS[match?.[2]] || ['', ''];
+  return {
+    name,
+    admin2,
+    admin1,
+    country: 'France',
+    latitude,
+    longitude,
+    elevation: Number.isFinite(Number(station.altitude)) ? Number(station.altitude) : null,
+    timezone: 'Europe/Paris'
+  };
+}
 const VIEWS = [
   { id: 'meteo', label: 'Météo', icon: 'viewMeteo' },
   { id: 'irrigation', label: 'Irrigation', icon: 'viewIrrigation' },
@@ -47,7 +102,10 @@ const TEMPLATE = `
   <section class="don-card don-station" id="donStation">
     <header class="don-station-head">
       <div class="don-station-title">
-        <h2 id="donStationName">—</h2>
+        <div class="don-station-name-row">
+          <h2 id="donStationName">—</h2>
+          <button class="don-btn don-btn-small don-forecast" type="button" id="donForecast">${icons.viewMeteo}<span>Voir les prévisions</span></button>
+        </div>
         <p class="don-station-sub" id="donStationSub"></p>
       </div>
       <div class="don-head-actions">
@@ -170,7 +228,7 @@ export async function mount(root, ctx) {
   let loadToken = 0;
   let view = VIEWS.some(v => v.id === storage.get('donnees.view')) ? storage.get('donnees.view') : 'meteo';
   let mode = storage.get('donnees.mode', 'hourly') === 'daily' ? 'daily' : 'hourly';
-  let rimproModel = 'venturia';
+  let rimproModel = RIMPRO_MODELS.some(m => m.id === storage.get('donnees.rimpro')) ? storage.get('donnees.rimpro') : 'venturia';
   let dailyExpanded = false;
   // Zoom partagé par tous les graphiques de l'onglet (même période affichée).
   const zoom = createZoomGroup(range => updateZoomBar(range));
@@ -273,6 +331,11 @@ export async function mount(root, ctx) {
     if (!station) return;
     const state = stationState(station);
     $('donStationName').textContent = station.nom;
+    const place = stationPlace(station);
+    $('donForecast').disabled = !place;
+    $('donForecast').title = place
+      ? `Prévisions météo à 7 jours à l’emplacement de la station (${place.name})`
+      : 'Position de la station inconnue : prévisions indisponibles';
     const sub = [
       station.commune,
       Number.isFinite(station.altitude) ? `${Math.round(station.altitude)} m d’altitude` : '',
@@ -608,18 +671,27 @@ export async function mount(root, ctx) {
     if (!id) {
       box.innerHTML = `<div class="don-card don-rim-empty">
         <h3>Pas de modèle RIMpro pour cette station</h3>
-        <p>Les contaminations (tavelure, carpocapse…) calculées par RIMpro s’affichent ici pour les stations abonnées.</p>
+        <p>Les modèles maladies et ravageurs calculés par RIMpro (tavelure, feu bactérien, carpocapse, psylle…) s’affichent ici pour les stations abonnées.</p>
         ${isAdmin() ? '<p class="don-hint">Administrateur : renseignez l’identifiant RIMpro de la station dans la « Fiche station ».</p>' : ''}
       </div>`;
       return;
     }
     const model = RIMPRO_MODELS.find(m => m.id === rimproModel) || RIMPRO_MODELS[0];
-    const url = `https://www.rimpro.eu/${model.path}?id=${encodeURIComponent(id)}`;
+    const url = `https://www.rimpro.eu/${model.path}?id=${encodeURIComponent(id)}&lang=fr`;
     box.innerHTML = `<article class="don-card don-rim">
       <header class="don-rim-head">
-        <div class="don-seg" role="group" aria-label="Modèle RIMpro">
-          ${RIMPRO_MODELS.map(m => `<button type="button" data-rim="${m.id}" class="${m.id === model.id ? 'is-active' : ''}" aria-pressed="${m.id === model.id}">${m.label}</button>`).join('')}
+        <div class="don-rim-models" role="group" aria-label="Modèle RIMpro">
+          ${RIMPRO_GROUPS.map(group => `<div class="don-rim-group">
+            <span class="don-rim-group-label">${group.label}</span>
+            <div class="don-rim-chips">${group.models.map(m => `<button type="button" data-rim="${m.id}" class="don-rim-chip${m.id === model.id ? ' is-active' : ''}" aria-pressed="${m.id === model.id}">${m.label}</button>`).join('')}</div>
+          </div>`).join('')}
         </div>
+        <label class="don-rim-select">
+          <span>Modèle RIMpro</span>
+          <select id="donRimSelect">
+            ${RIMPRO_GROUPS.map(group => `<optgroup label="${group.label}">${group.models.map(m => `<option value="${m.id}"${m.id === model.id ? ' selected' : ''}>${m.label}</option>`).join('')}</optgroup>`).join('')}
+          </select>
+        </label>
         <a class="don-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener">Ouvrir dans RIMpro ↗</a>
       </header>
       <div class="don-rim-frame is-loading">
@@ -628,6 +700,11 @@ export async function mount(root, ctx) {
       </div>
       <p class="don-hint">Modèle ${escapeHtml(model.label.toLowerCase())} calculé par RIMpro à partir de la station. Si le graphique ne s’affiche pas, utilisez « Ouvrir dans RIMpro ».</p>
     </article>`;
+    box.querySelector('#donRimSelect').addEventListener('change', event => {
+      rimproModel = event.target.value;
+      storage.set('donnees.rimpro', rimproModel);
+      renderMaladies();
+    });
     const frame = box.querySelector('.don-rim-frame');
     const iframe = frame.querySelector('iframe');
     iframe.addEventListener('load', () => frame.classList.remove('is-loading'), { once: true });
@@ -849,10 +926,17 @@ export async function mount(root, ctx) {
     const csv = event.target.closest('[data-csv]');
     if (csv) exportChart(csv.dataset.csv);
     const rim = event.target.closest('[data-rim]');
-    if (rim) { rimproModel = rim.dataset.rim; renderMaladies(); }
+    if (rim) { rimproModel = rim.dataset.rim; storage.set('donnees.rimpro', rimproModel); renderMaladies(); }
   });
   $('donDailyMore').addEventListener('click', () => { dailyExpanded = !dailyExpanded; renderDailyTable(); });
   $('donDailyCsv').addEventListener('click', exportDaily);
+  $('donForecast').addEventListener('click', () => {
+    const place = stationPlace(selected());
+    if (!place) { ctx.ui.toast('Position de la station inconnue : prévisions indisponibles.'); return; }
+    ctx.location.set(place, { save: false });
+    storage.set('indicateurs.tab', 'meteo');
+    ctx.navigate('indicateurs');
+  });
   $('donSyncOne').addEventListener('click', synchronise);
   $('donEditStation').addEventListener('click', openEditor);
   $('donStationForm').addEventListener('submit', saveStation);

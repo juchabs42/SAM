@@ -10,7 +10,7 @@ import { profile } from './profile.js';
 import { stationStore, stationState } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-18.6';
+const APP_VERSION = '2026-11-20.1';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
@@ -517,6 +517,8 @@ function createContext(tool, root) {
     onAuthChange(fn) { track(auth.onChange(() => { if (!disposed) fn(auth); })); },
     location: {
       get: () => places.current,
+      /** Change le lieu courant (ex. emplacement d'une station) ; save:false = sans l'ajouter à « Mes lieux ». */
+      set: (place, options) => places.select(place, options),
       onChange(fn) { track(places.onChange(event => { if (!disposed && event.type === 'current') fn(places.current); })); }
     },
     period: {

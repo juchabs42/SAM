@@ -30,6 +30,13 @@ sondes capacitives, dendromètres) : tous les comptes, ou seulement les comptes 
 est fait par la base (vue `station_mesures_visibles`) ; admins et full admins voient tout. La
 famille de chaque capteur se règle dans Administration → Capteurs (colonne « Données »).
 
+**Données** : le bouton « Voir les prévisions » (à côté du nom de la station) ouvre l’onglet
+Prévisions météo des Indicateurs, avec pour lieu la position exacte de la station (nommée d’après
+sa commune). L’onglet Maladies / ravageurs affiche les modèles RIMpro de la station : tavelure du
+pommier et du poirier, oïdium du pommier, feu bactérien, chancre européen, Marssonina,
+stemphyliose, moniliose, cylindrosporiose du cerisier, carpocapse, puceron cendré, psylle du
+poirier, et pour la vigne mildiou/oïdium/black-rot et eudémis (pages `rimpro.eu`, en français).
+
 Tous les graphiques ont un bouton « Agrandir » en haut à droite (à côté du CSV quand celui-ci est dans l’en-tête du graphique) qui les affiche en pleine page.
 
 Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
