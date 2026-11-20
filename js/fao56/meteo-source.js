@@ -130,7 +130,7 @@ export async function chargerMeteo(place, debut, fin, { client = null, stationId
   const enCache = cache?.get(cleCache, null) || { altitude: null, jours: {} };
   const parDate = new Map();
   let altitude = finite(place.altitude) ? place.altitude : enCache.altitude;
-  const sources = { archive: 0, prevision: 0, station: 0, cache: 0 };
+  const sources = { archive: 0, prevision: 0, station: 0, stationPluie: 0, cache: 0 };
 
   // 1. Réanalyse (jours définitifs, mis en cache sur l'appareil)
   if (debut <= finArchive) {
@@ -179,6 +179,8 @@ export async function chargerMeteo(place, debut, fin, { client = null, stationId
       if (finite(remplace.tmax) && finite(remplace.tmin) && remplace.tmax >= remplace.tmin) {
         parDate.set(d, { ...j, ...remplace, origine: 'station', omPluie: j.pluie });
         sources.station++;
+        // Pluviomètre masqué (Administration > Capteurs) : la pluie reste celle d'Open-Meteo.
+        if (finite(remplace.pluie)) sources.stationPluie++;
       }
     }
   }

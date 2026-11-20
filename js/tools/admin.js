@@ -86,7 +86,7 @@ const TEMPLATE = `
         <div class="adm-bar">
           <div>
             <h2>Capteurs</h2>
-            <p class="adm-sub">Toutes les mesures brutes d’une station, y compris celles qui n’apparaissent pas dans l’onglet Données (batterie…).</p>
+            <p class="adm-sub">Toutes les mesures brutes d’une station, y compris celles qui n’apparaissent pas dans l’onglet Données (batterie, capteurs masqués…).</p>
           </div>
           <div class="adm-actions">
             <label class="adm-field-inline">Station <select id="capStation" class="adm-input"></select></label>
@@ -109,9 +109,13 @@ const TEMPLATE = `
         <div class="adm-bar">
           <div>
             <h2>Noms des capteurs</h2>
-            <p class="adm-sub">Libellés et unités affichés dans l’onglet Données et ci-dessus.</p>
+            <p class="adm-sub">Libellés et unités, communs à toutes les stations. La case « Affiché » vaut pour la station choisie : décochez un capteur absent ou hors service (station sans pluviomètre…) pour le retirer de ses données.</p>
+          </div>
+          <div class="adm-actions">
+            <label class="adm-field-inline">Station <select id="capDicStation" class="adm-input"></select></label>
           </div>
         </div>
+        <p class="adm-hint" id="capMaskHint"></p>
         <div id="capDictionary" class="adm-list"></div>
       </div>
     </section>
@@ -880,9 +884,14 @@ export async function mount(root, ctx) {
     try { await loadDictionary(); } catch (error) { console.warn('Dictionnaire des capteurs indisponible', error); }
     const stations = [...store.list].sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
     if (!state.capStation || !stations.some(s => s.id === state.capStation)) {
-      state.capStation = (stations.find(s => (s.capteurs || []).length) || stations[0])?.id || null;
+      // Dernière station consultée dans cet onglet, sinon la première qui a des mesures.
+      const remembered = storage.get('admin.capStation');
+      state.capStation = stations.some(s => s.id === remembered) ? remembered
+        : (stations.find(s => (s.capteurs || []).length) || stations[0])?.id || null;
     }
-    $('capStation').innerHTML = stations.map(s => `<option value="${escapeHtml(s.id)}"${s.id === state.capStation ? ' selected' : ''}>${escapeHtml(s.nom)}${(s.capteurs || []).length ? '' : ' (aucune mesure)'}</option>`).join('');
+    const options = stations.map(s => `<option value="${escapeHtml(s.id)}"${s.id === state.capStation ? ' selected' : ''}>${escapeHtml(s.nom)}${(s.capteurs || []).length ? '' : ' (aucune mesure)'}</option>`).join('');
+    $('capStation').innerHTML = options;
+    $('capDicStation').innerHTML = options;
     $('capPeriod').value = String(storage.get('admin.capPeriod', 7));
     renderDictionary();
     await loadSensorData();
@@ -893,9 +902,7 @@ export async function mount(root, ctx) {
     const sensors = stationSensors(station);
     if (!state.capSensors) state.capSensors = sensors.includes('bat') ? ['bat'] : sensors.slice(0, 2);
     state.capSensors = state.capSensors.filter(code => sensors.includes(code));
-    $('capSensors').innerHTML = sensors.length
-      ? sensors.map(code => `<label class="adm-chip${state.capSensors.includes(code) ? ' is-on' : ''}"><input type="checkbox" value="${escapeHtml(code)}"${state.capSensors.includes(code) ? ' checked' : ''}>${escapeHtml(sensorLabel(code))}<small>${escapeHtml(code)}</small></label>`).join('')
-      : '<p class="adm-empty">Cette station n’a encore transmis aucune mesure.</p>';
+    renderChips(station, sensors);
     destroySensorCharts();
     $('capLatest').innerHTML = '';
     $('capCharts').innerHTML = '';
@@ -916,6 +923,17 @@ export async function mount(root, ctx) {
     state.sensorRows = data || [];
     renderLatest(sensors);
     renderSensorCharts();
+  }
+
+  // Puces des capteurs bruts : un capteur masqué dans Données reste consultable ici.
+  function renderChips(station, sensors) {
+    const masks = station?.capteurs_masques || [];
+    $('capSensors').innerHTML = sensors.length
+      ? sensors.map(code => {
+        const masked = masks.includes(code);
+        return `<label class="adm-chip${state.capSensors.includes(code) ? ' is-on' : ''}"${masked ? ' title="Masqué dans l’onglet Données pour cette station"' : ''}><input type="checkbox" value="${escapeHtml(code)}"${state.capSensors.includes(code) ? ' checked' : ''}>${escapeHtml(sensorLabel(code))}<small>${escapeHtml(code)}${masked ? ' · masqué' : ''}</small></label>`;
+      }).join('')
+      : '<p class="adm-empty">Cette station n’a encore transmis aucune mesure.</p>';
   }
 
   const valueOf = (row, code) => num(BASE_COLUMNS[code] ? row[BASE_COLUMNS[code]] : row.autres?.[code]);
@@ -1004,11 +1022,18 @@ export async function mount(root, ctx) {
     });
   }
 
-  $('capStation').addEventListener('change', () => {
-    state.capStation = $('capStation').value;
+  // Les deux listes « Station » de l'onglet (mesures brutes, noms des capteurs) restent alignées.
+  function selectCapStation(id) {
+    state.capStation = id;
+    storage.set('admin.capStation', id);
     state.capSensors = null;
+    $('capStation').value = id;
+    $('capDicStation').value = id;
+    renderDictionary();
     loadSensorData();
-  });
+  }
+  $('capStation').addEventListener('change', () => selectCapStation($('capStation').value));
+  $('capDicStation').addEventListener('change', () => selectCapStation($('capDicStation').value));
   $('capPeriod').addEventListener('change', () => {
     storage.set('admin.capPeriod', Number($('capPeriod').value));
     loadSensorData();
@@ -1022,21 +1047,45 @@ export async function mount(root, ctx) {
     renderSensorCharts();
   });
 
+  // Capteurs affichés dans l'onglet Données, station par station (stations.capteurs_masques,
+  // supabase/capteurs_masques.sql). Température, hygrométrie et pluie y sont toujours tracées ;
+  // les autres capteurs dès qu'ils ont transmis ; la batterie jamais.
+  const ALWAYS_CHARTED = ['t1', 'hyg1', 'pluv'];
+  const maskSupported = () => store.list.some(s => Array.isArray(s.capteurs_masques));
+
+  function showCell(code, station) {
+    if (!station || !maskSupported()) return '<span class="adm-muted">—</span>';
+    if (code === 'bat') return '<span class="adm-muted" title="La batterie n’apparaît jamais dans l’onglet Données">jamais affiché</span>';
+    const masks = station.capteurs_masques || [];
+    const present = ALWAYS_CHARTED.includes(code) || (station.capteurs || []).includes(code) || masks.includes(code);
+    if (!present) return '<span class="adm-muted" title="Ce capteur n’a jamais transmis de mesure pour cette station">absent</span>';
+    const on = !masks.includes(code);
+    return `<label class="adm-show${on ? '' : ' is-off'}" title="${on ? 'Décocher pour retirer ce capteur' : 'Cocher pour afficher ce capteur'} de l’onglet Données de ${escapeHtml(station.nom)}"><input type="checkbox" data-show="${escapeHtml(code)}"${on ? ' checked' : ''}><span>${on ? 'Affiché' : 'Masqué'}</span></label>`;
+  }
+
   // Dictionnaire des capteurs : codes connus + codes vus dans les mesures
   function renderDictionary() {
+    const station = store.list.find(s => s.id === state.capStation) || null;
+    const masks = station?.capteurs_masques || [];
+    $('capMaskHint').innerHTML = !maskSupported()
+      ? 'Pour choisir les capteurs affichés station par station, exécutez une fois <code>supabase/capteurs_masques.sql</code> dans Supabase (SQL Editor).'
+      : station
+        ? `${escapeHtml(station.nom)} : ${masks.length ? `${masks.length} capteur${masks.length > 1 ? 's' : ''} masqué${masks.length > 1 ? 's' : ''} dans Données (${masks.map(c => escapeHtml(sensorLabel(c))).join(', ')})` : 'tous les capteurs sont affichés dans Données'}. Une case décochée retire le capteur des graphiques, du résumé, des exports, de la carte et du Bilan irrigation ; les mesures restent consultables ci-dessus. Enregistré dès le clic.`
+        : '';
     const seen = new Set(store.list.flatMap(s => s.capteurs || []));
     const rows = [...state.dictionary];
     seen.forEach(code => { if (!rows.some(r => r.code === code)) rows.push({ code, libelle: '', unite: '', ordre: 100, missing: true }); });
     rows.sort((a, b) => (a.ordre - b.ordre) || a.code.localeCompare(b.code));
     $('capDictionary').innerHTML = `
       <table class="adm-table is-dictionary">
-        <thead><tr><th>Code</th><th>Libellé</th><th>Unité</th><th>Ordre</th>${state.hasCategory ? '<th>Données</th>' : ''}<th><span class="sr-only">Actions</span></th></tr></thead>
-        <tbody>${rows.map(r => `<tr data-code="${escapeHtml(r.code)}">
+        <thead><tr><th title="Affiché dans l’onglet Données pour la station choisie">Affiché</th><th>Code</th><th>Libellé</th><th>Unité</th><th>Ordre</th>${state.hasCategory ? '<th title="Famille de données : règle qui peut voir ce capteur (fiche station)">Famille</th>' : ''}<th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>${rows.map(r => `<tr data-code="${escapeHtml(r.code)}"${masks.includes(r.code) ? ' class="is-masked"' : ''}>
+          <td data-label="Affiché" class="adm-cell-show">${showCell(r.code, station)}</td>
           <td data-label="Code"><code>${escapeHtml(r.code)}</code>${r.missing ? '<span class="adm-badge is-warn">non décrit</span>' : ''}</td>
           <td data-label="Libellé"><input class="adm-input" data-f="libelle" value="${escapeHtml(r.libelle || '')}" placeholder="Nom affiché"></td>
           <td data-label="Unité"><input class="adm-input is-short" data-f="unite" value="${escapeHtml(r.unite || '')}"></td>
           <td data-label="Ordre"><input class="adm-input is-short" data-f="ordre" inputmode="numeric" value="${escapeHtml(String(r.ordre ?? 100))}"></td>
-          ${state.hasCategory ? `<td data-label="Données"><select class="adm-input" data-f="categorie" title="Famille de données : règle qui peut voir ce capteur (fiche station)">
+          ${state.hasCategory ? `<td data-label="Famille"><select class="adm-input" data-f="categorie" title="Famille de données : règle qui peut voir ce capteur (fiche station)">
             <option value="meteo"${r.categorie === 'meteo' ? ' selected' : ''}>Météo</option>
             <option value="irrigation"${r.categorie !== 'meteo' ? ' selected' : ''}>Irrigation</option>
           </select></td>` : ''}
@@ -1066,6 +1115,31 @@ export async function mount(root, ctx) {
       const station = store.list.find(s => s.id === state.capStation);
       loadSensorData(station);
     }
+  });
+
+  // Case « Affiché » : enregistrée tout de suite dans la fiche de la station.
+  $('capDictionary').addEventListener('change', async event => {
+    const box = event.target.closest('input[data-show]');
+    if (!box) return;
+    const station = store.list.find(s => s.id === state.capStation);
+    if (!station) return;
+    const code = box.dataset.show;
+    const show = box.checked;
+    const masks = new Set(station.capteurs_masques || []);
+    if (show) masks.delete(code); else masks.add(code);
+    const next = [...masks].sort();
+    $('capDictionary').querySelectorAll('input[data-show]').forEach(input => { input.disabled = true; });
+    const { data, error } = await supabase.from('stations').update({ capteurs_masques: next }).eq('id', station.id).select('id');
+    if (error || !data?.length) {
+      box.checked = !show;
+      $('capDictionary').querySelectorAll('input[data-show]').forEach(input => { input.disabled = false; });
+      ctx.ui.toast(error ? `Enregistrement impossible : ${error.message}` : 'Enregistrement refusé : seul un full admin peut modifier une station.', 6000);
+      return;
+    }
+    store.patch(station.id, { capteurs_masques: next });
+    ctx.ui.toast(`« ${sensorLabel(code)} » ${show ? 'apparaît de nouveau' : 'n’apparaît plus'} dans les données de ${station.nom}.`, 4000);
+    renderDictionary();
+    renderChips(station, stationSensors(station));
   });
 
   // ---------------------------------------------------------------------------

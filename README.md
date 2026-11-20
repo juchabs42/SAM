@@ -28,9 +28,19 @@ les comptes » coché, tout le monde voit tout. Décoché, on règle séparémen
 (température, humidité, pluie, humectation, RIMpro) et les données irrigation (tensiomètres,
 sondes capacitives, dendromètres) : tous les comptes, ou seulement les comptes cochés. Le filtrage
 est fait par la base (vue `station_mesures_visibles`) ; admins et full admins voient tout. La
-famille de chaque capteur se règle dans Administration → Capteurs (colonne « Données »).
+famille de chaque capteur se règle dans Administration → Capteurs (colonne « Famille »).
 
-**Données** : le bouton « Voir les prévisions » (à côté du nom de la station) ouvre l’onglet
+**Capteurs affichés, station par station** (Administration → Capteurs → « Noms des capteurs ») :
+choisir la station, puis cocher ou décocher la case « Affiché » de chaque capteur (enregistré dès
+le clic). Un capteur décoché (exemple : pas de pluviomètre à Carthagène P5) disparaît pour tous
+les comptes : graphiques, encarts, résumé journalier et exports de l’onglet Données, infobulles de
+la carte, et Bilan irrigation (qui garde alors la pluie d’Open-Meteo). Les mesures ne sont pas
+effacées : elles restent consultables dans Administration → Capteurs. Nécessite
+`supabase/capteurs_masques.sql`.
+
+**Données** : la pluviométrie n’est affichée que dans l’onglet Météo (graphique « Pluviométrie »,
+encart « Pluviométrie 24 h », colonne du résumé journalier) ; l’onglet Irrigation ne montre que les
+tensiomètres, sondes et dendromètres. Le bouton « Voir les prévisions » (à côté du nom de la station) ouvre l’onglet
 Prévisions météo des Indicateurs, avec pour lieu la position exacte de la station (nommée d’après
 sa commune). L’onglet Maladies / ravageurs affiche les modèles RIMpro de la station : tavelure du
 pommier et du poirier, oïdium du pommier, feu bactérien, chancre européen, Marssonina,
@@ -50,7 +60,8 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
    puis `supabase/pilotage.sql` (parcelles du Bilan irrigation ; tant qu'il n'est pas exécuté,
    l'outil garde les parcelles sur l'appareil et l'indique à l'écran),
    puis `supabase/roles.sql` (trois rôles : normal, admin, full admin),
-   puis `supabase/acces_stations.sql` (qui voit les données météo / irrigation de chaque station).
+   puis `supabase/acces_stations.sql` (qui voit les données météo / irrigation de chaque station),
+   puis `supabase/capteurs_masques.sql` (capteurs affichés ou masqués, station par station).
 2. **Authentication → Sign In / Providers** : désactiver *Allow new users to sign up*.
 3. **Authentication → URL Configuration** : *Site URL* = adresse principale du site
    (aujourd'hui `https://sam.juju-chabat42.workers.dev`, plus tard le nom de domaine définitif).
@@ -102,6 +113,7 @@ supabase/*.sql        tables, droits et règles d'accès, collecte des stations,
 supabase/functions/   fonction « sam-admin » (gestion des comptes depuis l'onglet Administration)
 supabase/roles.sql    rôles normal / admin / full admin
 supabase/acces_stations.sql  accès aux données météo / irrigation, station par station
+supabase/capteurs_masques.sql  capteurs masqués station par station (pluviomètre absent…)
 supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bilan hydrique
 supabase/emails/      modèles des mails d'invitation et de mot de passe (en français)
 _headers              en-têtes de sécurité (hébergement Cloudflare)

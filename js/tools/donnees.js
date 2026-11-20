@@ -263,6 +263,10 @@ export async function mount(root, ctx) {
   const selected = () => store.selected;
   // Droits du compte sur la station (Administration > Stations > accès).
   const access = () => selected()?.acces || { meteo: true, irrigation: true };
+  // Capteurs décochés dans Administration > Capteurs pour cette station (absents ou hors service :
+  // station sans pluviomètre…). La base les retire déjà de la vue filtrée ; on les retire aussi ici.
+  const masked = () => new Set(selected()?.capteurs_masques || []);
+  const shown = code => !masked().has(code);
 
   function renderAdmin() {
     root.querySelectorAll('.don-admin').forEach(el => el.classList.toggle('hidden', !isAdmin()));
@@ -287,13 +291,20 @@ export async function mount(root, ctx) {
     sensorLabels = Object.fromEntries((data || []).map(c => [c.code, c]));
   }
 
-  const toRow = row => ({ at: new Date(row.mesure_le), t: num(row.t_air), hr: num(row.hr), rain: num(row.pluie), others: row.autres || {} });
+  const toRow = (row, hide) => ({
+    at: new Date(row.mesure_le),
+    t: hide.has('t1') ? null : num(row.t_air),
+    hr: hide.has('hyg1') ? null : num(row.hr),
+    rain: hide.has('pluv') ? null : num(row.pluie),
+    others: hide.size ? Object.fromEntries(Object.entries(row.autres || {}).filter(([code]) => !hide.has(code))) : row.autres || {}
+  });
 
   async function loadStationData() {
     const station = selected();
     const p = ctx.period.get();
     if (!station || !p?.start) { hourly = []; recent = { rows: [], last: null }; return; }
     const token = ++loadToken;
+    const hide = new Set(station.capteurs_masques || []);
     const since = new Date(Date.now() - 24 * HOUR).toISOString();
     const [rows, last24] = await Promise.all([
       fetchAll(() => supabase.from(store.mesuresTable)
@@ -308,15 +319,15 @@ export async function mount(root, ctx) {
         .gte('mesure_le', since)
         .order('mesure_le', { ascending: true }))
     ]);
-    let last = last24.length ? toRow(last24[last24.length - 1]) : null;
+    let last = last24.length ? toRow(last24[last24.length - 1], hide) : null;
     if (!last && station.derniere_mesure) {
       const { data } = await supabase.from(store.mesuresTable).select('mesure_le,t_air,hr,pluie,autres')
         .eq('station_id', station.id).order('mesure_le', { ascending: false }).limit(1);
-      if (data?.[0]) last = toRow(data[0]);
+      if (data?.[0]) last = toRow(data[0], hide);
     }
     if (token !== loadToken) return;
-    hourly = rows.map(toRow);
-    recent = { rows: last24.map(toRow), last };
+    hourly = rows.map(row => toRow(row, hide));
+    recent = { rows: last24.map(row => toRow(row, hide)), last };
   }
 
   // -------------------------------------------------------------------------
@@ -353,13 +364,17 @@ export async function mount(root, ctx) {
     const todayRows = recent.rows.filter(r => r.t !== null && dayKey(r.at) === today);
     const minRow = todayRows.reduce((m, r) => (m && m.t <= r.t ? m : r), null);
     const maxRow = todayRows.reduce((m, r) => (m && m.t >= r.t ? m : r), null);
-    $('donKpis').innerHTML = [
-      kpi('Température', last?.t !== null && last ? `${formatNumber(last.t, 1)}<small> °C</small>` : '—', last ? whenLabel(last.at) : 'aucune mesure'),
-      kpi('Humidité relative', last?.hr !== null && last ? `${formatNumber(last.hr, 0)}<small> %</small>` : '—', last ? whenLabel(last.at) : ''),
-      kpi('Pluie 24 h', recent.rows.length && access().meteo ? `${formatNumber(rain24, 1)}<small> mm</small>` : '—', 'dernières 24 heures'),
-      kpi('T min / T max du jour', minRow ? `${formatNumber(minRow.t, 1)} / ${formatNumber(maxRow.t, 1)}<small> °C</small>` : '—',
+    // Encarts des seuls capteurs affichés (un capteur masqué n'a pas d'encart).
+    const kpis = [
+      shown('t1') && kpi('Température', last?.t !== null && last ? `${formatNumber(last.t, 1)}<small> °C</small>` : '—', last ? whenLabel(last.at) : 'aucune mesure'),
+      shown('hyg1') && kpi('Humidité relative', last?.hr !== null && last ? `${formatNumber(last.hr, 0)}<small> %</small>` : '—', last ? whenLabel(last.at) : ''),
+      shown('pluv') && kpi('Pluviométrie 24 h', recent.rows.length && access().meteo ? `${formatNumber(rain24, 1)}<small> mm</small>` : '—', 'dernières 24 heures'),
+      shown('t1') && kpi('T min / T max du jour', minRow ? `${formatNumber(minRow.t, 1)} / ${formatNumber(maxRow.t, 1)}<small> °C</small>` : '—',
         minRow ? `aujourd’hui · min ${hourOf(minRow.at)} · max ${hourOf(maxRow.at)}` : 'aucune mesure aujourd’hui')
-    ].join('');
+    ].filter(Boolean);
+    $('donKpis').innerHTML = kpis.join('');
+    $('donKpis').style.setProperty('--kpis', String(Math.max(kpis.length, 1)));
+    $('donKpis').classList.toggle('hidden', !kpis.length);
   }
 
   // -------------------------------------------------------------------------
@@ -420,10 +435,12 @@ export async function mount(root, ctx) {
     return days;
   }
 
-  /** Codes des capteurs complémentaires présents (fiche station + mesures). */
+  /** Codes des capteurs complémentaires présents (fiche station + mesures), hors capteurs masqués. */
   function sensorCodes() {
-    const codes = new Set((selected()?.capteurs || []).filter(c => !IGNORED.has(c)));
-    hourly.forEach(row => Object.keys(row.others).forEach(code => { if (!IGNORED.has(code)) codes.add(code); }));
+    const hide = masked();
+    const keep = code => !IGNORED.has(code) && !hide.has(code);
+    const codes = new Set((selected()?.capteurs || []).filter(keep));
+    hourly.forEach(row => Object.keys(row.others).forEach(code => { if (keep(code)) codes.add(code); }));
     return [...codes].sort((a, b) => (sensorLabels[a]?.ordre ?? 100) - (sensorLabels[b]?.ordre ?? 100) || a.localeCompare(b));
   }
 
@@ -438,14 +455,14 @@ export async function mount(root, ctx) {
     return { id, title, unit, hint, kind: 'line', datasets, yMin, yMax };
   }
 
-  function rainSpec(id, base, title = 'Pluie') {
+  function rainSpec(id, base, title = 'Pluviométrie') {
     const values = base.items.map(item => (base.mode === 'hourly' ? item.row?.rain ?? null : item.rain));
     let total = 0;
     const cumul = values.map(v => { total += v || 0; return round(total); });
     return {
       id, title, unit: 'mm', hint: '', kind: 'rain',
       datasets: [
-        { label: base.mode === 'hourly' ? 'Pluie horaire (mm)' : 'Pluie journalière (mm)', data: values.map(v => round(v)), color: COLORS.rain, type: 'bar' },
+        { label: base.mode === 'hourly' ? 'Pluviométrie horaire (mm)' : 'Pluviométrie journalière (mm)', data: values.map(v => round(v)), color: COLORS.rain, type: 'bar' },
         { label: 'Cumul (mm)', data: cumul, color: COLORS.cumul, type: 'line', axis: 'y2' }
       ]
     };
@@ -464,21 +481,26 @@ export async function mount(root, ctx) {
   function meteoSpecs(base) {
     const specs = [];
     if (base.mode === 'hourly') {
-      specs.push(lineSpec('temp', 'Température', '°C', [{ label: 'Température (°C)', data: series(base, it => it.row?.t ?? null), color: COLORS.temp }]));
-      specs.push(lineSpec('hr', 'Humidité relative', '%', [{ label: 'Humidité relative (%)', data: series(base, it => it.row?.hr ?? null), color: COLORS.hr }], { yMin: 0, yMax: 100 }));
+      if (shown('t1')) specs.push(lineSpec('temp', 'Température', '°C', [{ label: 'Température (°C)', data: series(base, it => it.row?.t ?? null), color: COLORS.temp }]));
+      if (shown('hyg1')) specs.push(lineSpec('hr', 'Humidité relative', '%', [{ label: 'Humidité relative (%)', data: series(base, it => it.row?.hr ?? null), color: COLORS.hr }], { yMin: 0, yMax: 100 }));
     } else {
-      specs.push(lineSpec('temp', 'Température', '°C', [
-        { label: 'T max (°C)', data: series(base, d => d.tmax), color: COLORS.tmax, dash: [6, 4], width: 1.8 },
-        { label: 'T moy. (°C)', data: series(base, d => d.tmoy), color: COLORS.tmoy, width: 2.2 },
-        { label: 'T min (°C)', data: series(base, d => d.tmin), color: COLORS.tmin, dash: [6, 4], width: 1.8 }
-      ]));
-      specs.push(lineSpec('hr', 'Humidité relative', '%', [
-        { label: 'HR max (%)', data: series(base, d => d.hrmax), color: COLORS.hrLight, dash: [5, 4], width: 1.4 },
-        { label: 'HR moy. (%)', data: series(base, d => d.hr), color: COLORS.hr },
-        { label: 'HR min (%)', data: series(base, d => d.hrmin), color: COLORS.hrLight, dash: [2, 3], width: 1.4 }
-      ], { yMin: 0, yMax: 100 }));
+      if (shown('t1')) {
+        specs.push(lineSpec('temp', 'Température', '°C', [
+          { label: 'T max (°C)', data: series(base, d => d.tmax), color: COLORS.tmax, dash: [6, 4], width: 1.8 },
+          { label: 'T moy. (°C)', data: series(base, d => d.tmoy), color: COLORS.tmoy, width: 2.2 },
+          { label: 'T min (°C)', data: series(base, d => d.tmin), color: COLORS.tmin, dash: [6, 4], width: 1.8 }
+        ]));
+      }
+      if (shown('hyg1')) {
+        specs.push(lineSpec('hr', 'Humidité relative', '%', [
+          { label: 'HR max (%)', data: series(base, d => d.hrmax), color: COLORS.hrLight, dash: [5, 4], width: 1.4 },
+          { label: 'HR moy. (%)', data: series(base, d => d.hr), color: COLORS.hr },
+          { label: 'HR min (%)', data: series(base, d => d.hrmin), color: COLORS.hrLight, dash: [2, 3], width: 1.4 }
+        ], { yMin: 0, yMax: 100 }));
+      }
     }
-    specs.push(rainSpec('rain', base));
+    // La pluviométrie n'est tracée que dans l'onglet Météo.
+    if (shown('pluv')) specs.push(rainSpec('rain', base));
     const humect = sensorCodes().filter(FAMILIES.humect.test);
     if (humect.length) specs.push(familySpec('humect', 'humect', humect, base));
     return specs;
@@ -500,9 +522,7 @@ export async function mount(root, ctx) {
         color: SENSOR_COLORS[(i + 3) % SENSOR_COLORS.length]
       }))));
     }
-    const probes = specs.length;
-    specs.push(rainSpec('irr-rain', base, 'Pluviométrie'));
-    return { specs, probes };
+    return specs;
   }
 
   // -------------------------------------------------------------------------
@@ -634,27 +654,29 @@ export async function mount(root, ctx) {
   function renderMeteo() {
     const base = timeBase();
     const blocked = !access().meteo;
-    const empty = blocked || !hourly.length;
-    $('donMeteoEmpty').textContent = blocked ? NOT_SHARED.meteo : empty ? 'Aucune mesure reçue sur cette période.' : '';
-    $('donMeteoEmpty').classList.toggle('hidden', !empty);
-    $('donDaily').classList.toggle('hidden', blocked);
-    if (empty) { destroyCharts(); $('donMeteoCharts').innerHTML = ''; }
-    else renderChartList($('donMeteoCharts'), meteoSpecs(base), base);
-    if (!blocked) renderDailyTable();
+    const specs = blocked ? [] : meteoSpecs(base);
+    const columns = blocked ? [] : dailyColumns();
+    const message = blocked ? NOT_SHARED.meteo
+      : !specs.length ? 'Aucun capteur météo affiché pour cette station.'
+        : !hourly.length ? 'Aucune mesure reçue sur cette période.' : '';
+    $('donMeteoEmpty').textContent = message;
+    $('donMeteoEmpty').classList.toggle('hidden', !message);
+    $('donDaily').classList.toggle('hidden', !columns.length);
+    if (message) { destroyCharts(); $('donMeteoCharts').innerHTML = ''; }
+    else renderChartList($('donMeteoCharts'), specs, base);
+    if (columns.length) renderDailyTable();
   }
 
   function renderIrrigation() {
     const base = timeBase();
-    const empty = !hourly.length;
-    const rights = access();
-    let { specs } = irrigationSpecs(base);
-    if (!rights.irrigation) specs = specs.filter(spec => spec.id === 'irr-rain');
-    if (!rights.meteo) specs = specs.filter(spec => spec.id !== 'irr-rain');
-    const blocked = !specs.length && !rights.irrigation;
-    const notice = !rights.irrigation ? NOT_SHARED.irrigation : '';
-    $('donIrrigationEmpty').textContent = empty ? 'Aucune mesure reçue sur cette période.' : notice;
-    $('donIrrigationEmpty').classList.toggle('hidden', !empty && !notice);
-    if (empty || blocked) { destroyCharts(); $('donIrrigationCharts').innerHTML = ''; }
+    const blocked = !access().irrigation;
+    const specs = blocked ? [] : irrigationSpecs(base);
+    const message = blocked ? NOT_SHARED.irrigation
+      : !hourly.length ? 'Aucune mesure reçue sur cette période.'
+        : !specs.length ? 'Aucun capteur d’irrigation (tensiomètre, sonde capacitive, dendromètre) affiché pour cette station.' : '';
+    $('donIrrigationEmpty').textContent = message;
+    $('donIrrigationEmpty').classList.toggle('hidden', !message);
+    if (message) { destroyCharts(); $('donIrrigationCharts').innerHTML = ''; }
     else renderChartList($('donIrrigationCharts'), specs, base);
   }
 
@@ -714,28 +736,36 @@ export async function mount(root, ctx) {
     }, 12000);
   }
 
+  /** Colonnes du résumé journalier (tableau et CSV) : seulement les capteurs affichés. */
+  function dailyColumns() {
+    const temp = v => (v === null ? '—' : `${formatNumber(v, 1)} °C`);
+    const hasHumect = sensorCodes().includes('hum');
+    return [
+      shown('t1') && { head: 'T min', csv: 't_min_C', html: d => temp(d.tmin), value: d => round(d.tmin) },
+      shown('t1') && { head: 'T max', csv: 't_max_C', html: d => temp(d.tmax), value: d => round(d.tmax) },
+      shown('t1') && { head: 'T moy.', csv: 't_moy_C', html: d => temp(d.tmoy), value: d => round(d.tmoy, 2) },
+      shown('hyg1') && { head: 'HR moy.', csv: 'hr_moy_pct', html: d => (d.hr === null ? '—' : `${formatNumber(d.hr, 0)} %`), value: d => round(d.hr) },
+      shown('pluv') && { head: 'Pluviométrie', csv: 'pluviometrie_mm', html: d => (d.rain === null ? '—' : `${formatNumber(d.rain, 1)} mm`), value: d => (d.rain === null ? null : round(d.rain)) },
+      hasHumect && { head: 'Humect. moy.', csv: 'humectation_moy_pct', html: d => ((d.others.hum ?? null) === null ? '—' : `${formatNumber(d.others.hum, 0)} %`), value: d => round(d.others.hum ?? null) }
+    ].filter(Boolean);
+  }
+
   function renderDailyTable() {
     const days = dailyRows();
-    const hasHumect = sensorCodes().some(FAMILIES.humect.test);
-    $('donDailyHead').innerHTML = `<tr><th>Jour</th><th>T min</th><th>T max</th><th>T moy.</th><th>HR moy.</th><th>Pluie</th>${hasHumect ? '<th>Humect. moy.</th>' : ''}</tr>`;
-    const cols = hasHumect ? 7 : 6;
+    const columns = dailyColumns();
+    $('donDailyHead').innerHTML = `<tr><th>Jour</th>${columns.map(c => `<th>${c.head}</th>`).join('')}</tr>`;
     const body = $('donDailyBody');
     const more = $('donDailyMore');
     if (!days.length) {
-      body.innerHTML = `<tr><td colspan="${cols}" class="don-empty-cell">Aucune donnée.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="${columns.length + 1}" class="don-empty-cell">Aucune donnée.</td></tr>`;
       more.classList.add('hidden');
       return;
     }
     const ordered = [...days].reverse();
-    const shown = dailyExpanded ? ordered : ordered.slice(0, 7);
-    body.innerHTML = shown.map(d => `<tr class="${d.n === 0 ? 'is-empty' : ''}">
+    const visible = dailyExpanded ? ordered : ordered.slice(0, 7);
+    body.innerHTML = visible.map(d => `<tr class="${d.n === 0 ? 'is-empty' : ''}">
       <td data-label="Jour">${formatDateShort(d.day, true)}</td>
-      <td data-label="T min">${d.tmin === null ? '—' : `${formatNumber(d.tmin, 1)} °C`}</td>
-      <td data-label="T max">${d.tmax === null ? '—' : `${formatNumber(d.tmax, 1)} °C`}</td>
-      <td data-label="T moy.">${d.tmoy === null ? '—' : `${formatNumber(d.tmoy, 1)} °C`}</td>
-      <td data-label="HR moy.">${d.hr === null ? '—' : `${formatNumber(d.hr, 0)} %`}</td>
-      <td data-label="Pluie">${d.rain === null ? '—' : `${formatNumber(d.rain, 1)} mm`}</td>
-      ${hasHumect ? `<td data-label="Humect. moy.">${d.others.hum === undefined || d.others.hum === null ? '—' : `${formatNumber(d.others.hum, 0)} %`}</td>` : ''}
+      ${columns.map(c => `<td data-label="${c.head}">${c.html(d)}</td>`).join('')}
     </tr>`).join('');
     const hidden = ordered.length - 7;
     more.classList.toggle('hidden', hidden <= 0);
@@ -746,11 +776,10 @@ export async function mount(root, ctx) {
     const station = selected();
     const p = ctx.period.get();
     const days = dailyRows();
-    if (!station || !days.length) return ctx.ui.toast('Aucune donnée à exporter.');
-    const hasHumect = sensorCodes().some(FAMILIES.humect.test);
-    const header = ['jour', 't_min_C', 't_max_C', 't_moy_C', 'hr_moy_pct', 'pluie_mm', ...(hasHumect ? ['humectation_moy_pct'] : [])];
-    const lines = days.map(d => [d.day, csvNumber(round(d.tmin)), csvNumber(round(d.tmax)), csvNumber(round(d.tmoy, 2)), csvNumber(round(d.hr)), csvNumber(d.rain === null ? null : round(d.rain)),
-      ...(hasHumect ? [csvNumber(round(d.others.hum ?? null))] : [])]);
+    const columns = dailyColumns();
+    if (!station || !days.length || !columns.length) return ctx.ui.toast('Aucune donnée à exporter.');
+    const header = ['jour', ...columns.map(c => c.csv)];
+    const lines = days.map(d => [d.day, ...columns.map(c => csvNumber(c.value(d)))]);
     download(`SAM_${safeName(station.nom)}_resume_journalier_${p.start}_${p.end}.csv`, [header, ...lines]);
   }
 
@@ -768,7 +797,6 @@ export async function mount(root, ctx) {
     if (view !== 'maladies') $('donRimpro').innerHTML = '';
     const timed = view !== 'maladies';
     $('donFilters').classList.toggle('hidden', !timed);
-    $('donZoomBar').classList.toggle('hidden', !timed || !hourly.length);
     modeButtons.forEach(b => {
       const on = b.dataset.mode === mode;
       b.classList.toggle('is-active', on);
@@ -777,6 +805,8 @@ export async function mount(root, ctx) {
     if (view === 'meteo') renderMeteo();
     else if (view === 'irrigation') renderIrrigation();
     else renderMaladies();
+    // Aide au zoom seulement quand des graphiques sont affichés.
+    $('donZoomBar').classList.toggle('hidden', !timed || !charts.size);
   }
 
   function renderAll() {

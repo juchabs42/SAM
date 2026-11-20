@@ -87,7 +87,9 @@
 .tool-admin input[type="search"].adm-input { width: min(340px, 100%); }
 .tool-admin .adm-input.is-short { width: 90px; }
 .tool-admin .adm-field-inline { display: inline-flex; align-items: center; gap: 8px; color: var(--sam-ink-2); font-size: .88rem; font-weight: 600; }
-.tool-admin .adm-field-inline select { max-width: 240px; }
+.tool-admin .adm-field-inline { min-width: 0; max-width: 100%; }
+/* min-width 0 : un long nom de station ne doit pas élargir la carte (téléphone). */
+.tool-admin .adm-field-inline select { min-width: 0; max-width: 240px; text-overflow: ellipsis; }
 
 /* Tableaux (cartes empilées sur téléphone) */
 .tool-admin .adm-list { min-width: 0; overflow-x: auto; }
@@ -232,6 +234,15 @@
 .tool-admin .adm-chart-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .tool-admin .adm-chart-head span { color: var(--sam-muted); font-size: .82rem; }
 .tool-admin .adm-chart { position: relative; height: 260px; }
+/* Noms des capteurs : case « Affiché » (station choisie) */
+.tool-admin #capMaskHint { margin: 10px 0 2px; }
+.tool-admin #capMaskHint:empty { display: none; }
+.tool-admin .adm-cell-show { width: 1%; white-space: nowrap; }
+.tool-admin .adm-cell-show > .adm-muted { padding-top: 10px; font-size: .82rem; }
+.tool-admin .adm-show { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; color: var(--sam-ink-2); font-size: .86rem; font-weight: 600; cursor: pointer; }
+.tool-admin .adm-show input { width: 18px; height: 18px; margin: 0; accent-color: var(--sam-red-700); cursor: pointer; }
+.tool-admin .adm-show.is-off { color: #8a5a00; }
+.tool-admin .adm-table tr.is-masked { background: #fffaf0; }
 
 /* Fenêtres (invitation, station, confirmation) */
 .tool-admin .adm-dialog {
@@ -288,7 +299,7 @@
   .tool-admin .adm-actions > * { width: 100%; }
   .tool-admin input[type="search"].adm-input { width: 100%; }
   .tool-admin .adm-field-inline { justify-content: space-between; }
-  .tool-admin .adm-field-inline select { flex: 1; max-width: none; }
+  .tool-admin .adm-field-inline select { flex: 1; width: 100%; max-width: 100%; }
   .tool-admin .adm-table td { grid-template-columns: 100px minmax(0, 1fr); }
   .tool-admin .adm-chart { height: 220px; }
   .tool-admin .adm-form { padding: 18px 16px; }

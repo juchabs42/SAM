@@ -55,7 +55,7 @@
 .tool-donnees .don-state.is-silent::before, .tool-donnees .don-state.is-off::before { background: #8a9099; }
 .tool-donnees .don-state.is-pending { background: #fff; border: 1px dashed #b8bcc4; color: var(--sam-muted); }
 .tool-donnees .don-state:empty { display: none; }
-.tool-donnees .don-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tool-donnees .don-kpis { display: grid; grid-template-columns: repeat(var(--kpis, 4), minmax(0, 1fr)); gap: 12px; }
 .tool-donnees .don-kpi { display: grid; gap: 4px; padding: 14px 16px; border: 1px solid var(--sam-line); border-radius: 10px; background: var(--sam-bg-soft); min-width: 0; }
 .tool-donnees .don-kpi-label { color: var(--sam-ink-2); font-size: .84rem; font-weight: 650; }
 .tool-donnees .don-kpi-value { font-size: 1.5rem; font-weight: 750; letter-spacing: -.01em; }
@@ -200,6 +200,8 @@
 
 @media (max-width: 1200px) {
   .tool-donnees .don-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Nombre impair d'encarts (capteur masqué) : le dernier prend toute la largeur. */
+  .tool-donnees .don-kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 @media (max-width: 760px) {
   .tool-donnees .don-card { padding: 14px 14px 16px; }

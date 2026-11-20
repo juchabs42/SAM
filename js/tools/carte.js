@@ -106,6 +106,8 @@ export async function mount(root, ctx) {
     latestLoaded = true;
   }
 
+  const hidden = (station, code) => (station.capteurs_masques || []).includes(code);
+
   // Une station pas encore installée n'a pas de données : seuls les administrateurs l'ouvrent
   // (pour compléter sa fiche).
   const canOpen = station => station.installee !== false || ctx.isFullAdmin;
@@ -131,11 +133,13 @@ export async function mount(root, ctx) {
     if (station.acces && !station.acces.meteo) {
       values = '<span class="carte-tip-values is-loading">Données météo non partagées avec votre compte</span>';
     } else if (info) {
-      values = `<span class="carte-tip-values">
-        <span><b>${formatNumber(info.t, 1)}</b> °C</span>
-        <span><b>${formatNumber(info.hr, 0)}</b> % HR</span>
-        <span>Pluie 24 h <b>${formatNumber(info.rain, 1)}</b> mm</span>
-      </span>`;
+      // Capteurs masqués pour cette station (Administration > Capteurs) : pas de valeur affichée.
+      const parts = [
+        !hidden(station, 't1') && `<span><b>${formatNumber(info.t, 1)}</b> °C</span>`,
+        !hidden(station, 'hyg1') && `<span><b>${formatNumber(info.hr, 0)}</b> % HR</span>`,
+        !hidden(station, 'pluv') && `<span>Pluviométrie 24 h <b>${formatNumber(info.rain, 1)}</b> mm</span>`
+      ].filter(Boolean);
+      if (parts.length) values = `<span class="carte-tip-values">${parts.join('')}</span>`;
     } else if (!latestLoaded && state.key !== 'pending') {
       values = '<span class="carte-tip-values is-loading">Dernières mesures en cours de chargement…</span>';
     }
@@ -155,7 +159,7 @@ export async function mount(root, ctx) {
     const shown = items.slice(0, 8);
     const rows = shown.map(s => {
       const state = stationState(s);
-      const t = latest.get(s.id)?.t;
+      const t = hidden(s, 't1') ? null : latest.get(s.id)?.t;
       const detail = state.key === 'ok' || state.key === 'late'
         ? (t === null || t === undefined ? state.label : `${formatNumber(t, 1)} °C`)
         : state.label;
