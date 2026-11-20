@@ -41,16 +41,24 @@ export const solParId = id => SOLS.find(s => s.id === id) || (SOLS_VOISINS[id] ?
  * (mesure d'uniformité, état du réseau).
  */
 export const SYSTEMES = [
-  { id: 'goutte-a-goutte', nom: 'Goutte-à-goutte', fw: [0.3, 0.4], fwDefaut: 0.35, goutte: true, efficience: 0.9, frequent: true },
-  { id: 'micro-aspersion', nom: 'Micro-aspersion (vergers)', fw: [0.5, 0.8], fwDefaut: 0.65, efficience: 0.85, frequent: true },
-  { id: 'aspersion-verger', nom: 'Aspersion sous les arbres (vergers)', fw: [0.7, 1.0], fwDefaut: 0.85, efficience: 0.75 },
+  { id: 'goutte-a-goutte', nom: 'Goutte-à-goutte', fw: [0.3, 0.4], fwDefaut: 0.35, goutte: true, efficience: 0.9, frequent: true, humecte: [0.3, 0.5], humecteDefaut: 0.4 },
+  { id: 'micro-aspersion', nom: 'Micro-aspersion (vergers)', fw: [0.5, 0.8], fwDefaut: 0.65, efficience: 0.85, frequent: true, humecte: [0.5, 0.8], humecteDefaut: 0.65 },
+  { id: 'aspersion-verger', nom: 'Aspersion sous les arbres (vergers)', fw: [0.7, 1.0], fwDefaut: 0.85, efficience: 0.75, humecte: [0.8, 1], humecteDefaut: 1 },
   { id: 'aspersion', nom: 'Aspersion (grandes cultures, maraîchage)', fw: [1, 1], fwDefaut: 1, efficience: 0.75 },
   { id: 'pivot', nom: 'Pivot / rampe', fw: [1, 1], fwDefaut: 1, efficience: 0.8 },
   { id: 'raie-etroite', nom: 'À la raie, toutes les raies (planches étroites)', fw: [0.6, 1.0], fwDefaut: 0.8, efficience: 0.6 },
   { id: 'raie-large', nom: 'À la raie, toutes les raies (planches larges)', fw: [0.4, 0.6], fwDefaut: 0.5, efficience: 0.6 },
   { id: 'raie-alternee', nom: 'À la raie, une raie sur deux', fw: [0.3, 0.5], fwDefaut: 0.4, efficience: 0.6 },
   { id: 'submersion', nom: 'Submersion / calant', fw: [1, 1], fwDefaut: 1, efficience: 0.6 }
-].map(s => ({ ...s, src: S('7.6', 236), srcEfficience: 'Valeur indicative (définition : Manuel FAO n° 5, annexe 4)' }));
+].map(s => ({
+  humecte: [1, 1],
+  humecteDefaut: 1,
+  ...s,
+  src: S('7.6', 236),
+  srcEfficience: 'Valeur indicative (définition : Manuel FAO n° 5, annexe 4)',
+  // Volume de sol humecté (irrigation localisée) : hors FAO-56, valeurs courantes de terrain
+  srcHumecte: 'Valeur indicative de terrain (hors FAO-56), à vérifier par un profil ou des sondes'
+}));
 
 export const systemeParId = id => SYSTEMES.find(s => s.id === id) || null;
 
@@ -109,6 +117,5 @@ export const CLIMATS = [
 export const DEFAUTS_TERRAIN = {
   zrLigneux: { valeur: 0.8, note: 'Profondeur racinaire des ligneux non tabulée (tableau 6.3) : 0,8 m par défaut, à ajuster (fosse, sondes).' },
   zrMinAnnuel: { valeur: 0.2, note: 'Profondeur racinaire au semis/plantation (0,15–0,20 m).' },
-  fractionHumectee: { valeur: 1, note: 'Fraction du volume racinaire humecté (irrigation localisée). 1 = méthode FAO (pas de réduction).' },
-  pluiePrevue: { valeur: 0.5, note: 'Part de la pluie prévue prise en compte dans le calcul des apports (prévision incertaine).' }
+  fractionHumectee: { valeur: 1, note: 'Fraction du volume racinaire humecté (irrigation localisée), proposée selon le système (goutte-à-goutte 30 à 50 %). 1 = pas de réduction de la RU.' }
 };

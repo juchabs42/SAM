@@ -16,7 +16,7 @@ export const OPTIONS_DEFAUT = {
   peau: true,               // couche de surface « skin » (Éq. 7.11 à 7.14) ; false = procédure 1998
   ajusterP: true,           // p ajusté à l'ETc du jour (Éq. 8.5)
   ajusterClimat: true,      // ajustement de Kcb mid / end au climat (Éq. 7.2)
-  pluiePrevue: 0.5,         // part de la pluie prévue retenue pour la planification
+  pluiePrevue: 1,           // part de la pluie prévue retenue pour la planification (1 = telle qu'annoncée)
   planifier: true,          // calcule des apports sur la période de prévision
   mad: null,                // seuil de déclenchement (fraction de TAW) ; null = p du jour (RAW)
   cible: 1,                 // fraction du déficit à recompléter (1 = retour à la capacité au champ)

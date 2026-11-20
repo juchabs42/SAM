@@ -160,8 +160,19 @@ site (les anciens liens `#/bilan` mènent au Bilan irrigation) et de la base : e
   réserve utile et stress, paillages ; méthode simplifiée (Kc unique) en option.
 - **Apports calculés** d'aujourd'hui à J+7 (mm, m³/ha, durée de poste), pendant la saison de
   culture uniquement. Irrigations saisies à la main ou importées d'un fichier Excel (colonnes
-  Date et Apport).
+  Date et Apport). Pluie prévue comptée telle qu'annoncée ; l'onglet Bilan signale les pluies
+  annoncées à plus de 2 jours (prévision incertaine). Seuil standard (RFU ajustée à la chaleur,
+  ou fixe au choix), confort ou personnalisé, avec les valeurs en mm affichées sous le choix.
+- **Lecture du bilan** : coefficient du jour décomposé (transpiration + évaporation du sol, avec
+  la cause), transpiration et évaporation du sol séparées dans le tableau jour par jour, alerte
+  quand les dates de saison s'écartent beaucoup des dates proposées, questions fréquentes dans
+  l'onglet Aide.
+- **Couverture mesurée** (facultatif) : ombre au sol vers midi (utilisée telle quelle) ou
+  dimensions du feuillage vu du dessus (ombre de midi déduite de la forme, Encadré 9.2), avec
+  calcul du pourcentage à partir des mesures.
 - **Catalogue** : 76 espèces, 184 conduites (arboriculture, vigne, maraîchage, grandes cultures,
   prairies), généré depuis le PDF FAO ; à ne pas modifier à la main (`js/fao56/data/cultures-2025.js`).
 - **Valeurs par défaut hors méthode FAO**, signalées dans l'outil : profondeur d'enracinement des
-  ligneux (0,8 m), efficience du réseau, dates de saison proposées, volume de sol humecté.
+  ligneux (0,8 m), efficience du réseau, dates de saison proposées, volume de sol humecté
+  (proposé selon le système : goutte-à-goutte 40 %, micro-aspersion 65 %, aspersion 100 % ;
+  appliqué aux nouvelles parcelles et au changement de système, jamais aux parcelles existantes).

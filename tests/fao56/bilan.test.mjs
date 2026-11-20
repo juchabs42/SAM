@@ -165,3 +165,20 @@ test('Catalogue 2025 et tables de référence', () => {
   assert.equal(C.classeTextureUSDA(45, 45, 10), 'silty-clay');
   assert.equal(systemeParId('goutte-a-goutte').fwDefaut, 0.35);
 });
+
+test('Pluie prévue comptée telle qu’annoncée ; seuil fixe quand p n’est pas ajusté', () => {
+  const p = { ...parcelle79, etatInitial: { dr: 0 } };
+  const meteo = Array.from({ length: 12 }, (_, i) => ({
+    date: C.ajouterJours('2026-06-01', i), et0: i < 6 ? 3 : 8, pluie: i === 9 ? 10 : 0, u2: 2, hrmin: 45
+  }));
+  // Prévision à partir du 6e jour : la pluie du 10e jour est entièrement comptée par défaut
+  const r = simuler(p, meteo, [], { planifier: false }, meteo[5].date);
+  assert.equal(r.jours[9].prevision, true);
+  proche(r.jours[9].pluieRetenue, 10, 1e-9, 'pluie prévue retenue');
+  // p ajusté (Éq. 8.5) : la fraction varie avec la demande ; non ajusté : constante
+  const ajuste = simuler(p, meteo, [], { planifier: false, ajusterP: true }, null);
+  const fixe = simuler(p, meteo, [], { planifier: false, ajusterP: false }, null);
+  assert.ok(new Set(ajuste.jours.map(j => j.p.toFixed(3))).size > 1, 'p varie avec la demande');
+  assert.equal(new Set(fixe.jours.map(j => j.p.toFixed(3))).size, 1, 'p reste fixe');
+  proche(fixe.jours[8].seuil / fixe.jours[8].taw, parcelle79.p ?? 0.5, 1e-9, 'seuil = p fixe × RU');
+});

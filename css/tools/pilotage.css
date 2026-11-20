@@ -65,6 +65,16 @@
 .tool-pilotage .pil-kpi small { color: var(--sam-muted); }
 .tool-pilotage .pil-kpi.is-alerte { border-color: #f3c2c8; background: var(--sam-red-50); }
 .tool-pilotage .pil-kpi.is-alerte b { color: var(--sam-red-800); }
+.tool-pilotage .pil-kpi-large { grid-column: 1 / -1; }
+.tool-pilotage .pil-kpi-large small { line-height: 1.4; }
+.tool-pilotage .pil-pluie-loin { margin: 10px 0 0; padding: 8px 10px; border: 1px solid #f1d28a; border-radius: var(--sam-radius-sm); background: #fff8e6; font-size: .86rem; line-height: 1.45; }
+.tool-pilotage .pil-alerte-saison { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
+.tool-pilotage .pil-alerte-saison p { flex: 1 1 420px; margin: 0; }
+.tool-pilotage .pil-faq details { padding: 8px 0; border-bottom: 1px solid var(--sam-line-2); }
+.tool-pilotage .pil-faq details:last-child { border-bottom: 0; }
+.tool-pilotage .pil-faq summary { font-weight: 600; }
+.tool-pilotage .pil-faq details[open] > summary { margin-bottom: 4px; }
+.tool-pilotage .pil-faq p { margin: 4px 0 4px; color: var(--sam-ink-2); font-size: .9rem; }
 .tool-pilotage .pil-chart { position: relative; height: 340px; }
 .tool-pilotage .pil-note { margin: 8px 0 0; color: var(--sam-muted); font-size: .84rem; }
 .tool-pilotage details > summary { cursor: pointer; font-weight: 700; }
@@ -80,7 +90,7 @@
 .tool-pilotage .pil-table th:first-child, .tool-pilotage .pil-table td:first-child { text-align: left; }
 .tool-pilotage .pil-table th { position: sticky; top: 0; background: #fff; color: var(--sam-muted); font-weight: 600; white-space: nowrap; }
 .tool-pilotage .pil-table tr.is-prev td { background: #f6f9fd; color: #34506f; }
-.tool-pilotage .pil-table tr.is-stress td:nth-child(6) { color: var(--sam-red-800); font-weight: 700; }
+.tool-pilotage .pil-table tr.is-stress td.pil-stress { color: var(--sam-red-800); font-weight: 700; }
 .tool-pilotage .pil-table em { color: var(--sam-green-700); font-style: normal; font-weight: 600; }
 .tool-pilotage #pil-details .pil-table-wrap { max-height: 520px; overflow: auto; }
 .tool-pilotage .pil-suppr { width: 30px; height: 30px; border: 1px solid var(--sam-line); border-radius: 8px; background: #fff; color: var(--sam-muted); cursor: pointer; }
@@ -102,9 +112,18 @@
 .tool-pilotage .pil-sub { margin: 10px 0 0; padding: 10px 12px; border: 1px dashed var(--sam-line); border-radius: var(--sam-radius-sm); background: var(--sam-bg-soft); }
 .tool-pilotage .pil-sub > summary { font-weight: 600; font-size: .92rem; }
 .tool-pilotage .pil-sub2 { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--sam-line); }
+.tool-pilotage .pil-bascule { margin: 4px 0 0 26px; }
+.tool-pilotage .pil-mesure { margin: 8px 0; padding: 8px 12px; border: 1px solid var(--sam-line-2); border-radius: var(--sam-radius-sm); background: #fff; }
+.tool-pilotage .pil-mesure .pil-fields { margin: 8px 0 4px; }
+/* Curseurs : réglette + case de saisie */
+.tool-pilotage .pil-curseur-ligne { display: flex; align-items: center; gap: 10px; }
+.tool-pilotage .sam-field .pil-curseur-ligne input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; min-height: 0; height: 28px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; accent-color: var(--sam-red-700); cursor: pointer; }
+.tool-pilotage .pil-curseur-nb { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; color: var(--sam-muted); }
+.tool-pilotage .sam-field .pil-curseur-nb input { width: 66px; min-height: 36px; padding: 0 8px; text-align: right; }
 .tool-pilotage .pil-aide { display: block; margin: 4px 0 0; color: var(--sam-muted); font-size: .8rem; font-weight: 400; line-height: 1.35; }
 .tool-pilotage p.pil-aide { font-size: .84rem; }
 .tool-pilotage .pil-ref { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 6px 0; padding: 8px 12px; border-radius: var(--sam-radius-sm); background: #f5f8fc; font-size: .86rem; }
+.tool-pilotage .pil-ref.pil-ref-texte { display: block; line-height: 1.5; }
 .tool-pilotage .pil-gdd { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin: 6px 0; }
 .tool-pilotage .pil-gdd .sam-field { min-width: 240px; }
 .tool-pilotage .pil-texture { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -128,4 +147,5 @@
   .tool-pilotage .pil-lexique { grid-template-columns: 1fr; }
   .tool-pilotage .pil-lexique dd { margin-bottom: 6px; }
   .tool-pilotage .pil-plan li { flex-direction: column; gap: 2px; }
+  .tool-pilotage .pil-bascule { margin-left: 0; }
 }
