@@ -74,10 +74,11 @@
 .tool-pilotage .pil-apport-quand { color: var(--sam-ink-2); font-size: .82rem; font-weight: 600; }
 .tool-pilotage .pil-apport-dose { color: var(--sam-red-800); font-size: 1.7rem; font-weight: 800; line-height: 1.15; }
 .tool-pilotage .pil-faits { display: grid; margin: 0 0 4px; }
-.tool-pilotage .pil-faits > div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--sam-line-2); font-size: .92rem; }
-.tool-pilotage .pil-faits > div:last-child { border-bottom: 0; }
-.tool-pilotage .pil-faits dt { color: var(--sam-ink-2); }
-.tool-pilotage .pil-faits dd { margin: 0; font-weight: 600; text-align: right; white-space: nowrap; }
+.tool-pilotage .pil-fait { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 0 5px; border-top: 1px solid var(--sam-line-2); font-size: .92rem; }
+.tool-pilotage .pil-faits > .pil-fait:first-child { border-top: 0; }
+.tool-pilotage .pil-fait span { color: var(--sam-ink-2); }
+.tool-pilotage .pil-fait b { font-weight: 700; text-align: right; }
+.tool-pilotage .pil-fait-detail { margin: 0 0 6px; padding-left: 18px; color: var(--sam-muted); font-size: .82rem; line-height: 1.45; }
 .tool-pilotage .pil-mention { margin: 12px 0 0; color: var(--sam-muted); font-size: .78rem; line-height: 1.4; }
 .tool-pilotage .pil-alerte-saison { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
 .tool-pilotage .pil-alerte-saison p { flex: 1 1 420px; margin: 0; }

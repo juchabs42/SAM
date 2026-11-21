@@ -33,6 +33,16 @@ const dateFr = iso => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice
 const jourMois = iso => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
 const dateLongue = iso => new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 const dateCourte = iso => new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+/** « 22 juil. » : jour et mois abrégé. */
+const jourMoisCourt = iso => new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+/** « aujourd’hui », « demain », « dans 3 jours ». */
+const dansJours = (iso, today) => { const n = C.ecartJours(today, iso); return n <= 0 ? 'aujourd’hui' : n === 1 ? 'demain' : `dans ${n} jours`; };
+/** Jours d'un même apport : « aujourd’hui », « sam. 25 juil. », « du 18 au 22 juil. », « d’aujourd’hui au 22 juil. ». */
+function periodeCourte(debut, fin, today) {
+  if (debut === fin) return debut === today ? 'aujourd’hui' : dateCourte(debut);
+  const memeMois = debut.slice(0, 7) === fin.slice(0, 7);
+  return `${debut === today ? 'd’aujourd’hui' : `du ${memeMois ? String(+debut.slice(8, 10)) : jourMoisCourt(debut)}`} au ${jourMoisCourt(fin)}`;
+}
 const ecartJours = (a, b) => C.ecartJours(a, b);
 const pad2 = n => String(n).padStart(2, '0');
 
@@ -647,7 +657,8 @@ export async function mount(root, ctx) {
       </div>`;
     };
     let principal;
-    if (syn.horsSaison && !syn.planifiees.length) {
+    const horsSaison = syn.horsSaison && !syn.planifiees.length;
+    if (horsSaison) {
       const st = S.calc.param.stades;
       const avant = today < st.debut;
       const annuel = estAnnuel(S.calc.param.cult);
@@ -659,35 +670,47 @@ export async function mount(root, ctx) {
         <p class="pil-muted">${avant ? 'Si la culture a déjà démarré' : 'Si la culture est encore en végétation'}, corrigez les dates dans l’onglet Parcelle.</p>`;
     } else if (syn.planifiees.length || atteint) {
       const first = syn.planifiees[0];
-      const titre = atteint ? 'Seuil d’irrigation atteint' : `Seuil d’irrigation atteint ${dateLongue(first.date)} (prévision)`;
+      // Titre sans date : « atteint », ou « atteint dans 3 jours » ; la date figure une seule fois, dans l'encadré
+      const titre = atteint || !first || first.date === today
+        ? 'Seuil d’irrigation atteint'
+        : `Seuil d’irrigation atteint ${dansJours(first.date, today)} (prévision)`;
       const saisieJour = S.irrigations.filter(r => r.jour === today).reduce((a, r) => a + Number(r.dose_brute_mm || 0), 0);
-      const quand = !first ? '' : first.date === today ? 'Apport calculé pour aujourd’hui' : `Prochain apport calculé : ${dateCourte(first.date)}`;
+      // Plusieurs apports : leurs dates figurent dans la prévision, l'encadré n'en répète pas
+      const quand = !first ? '' : first.date === today ? 'Apport calculé pour aujourd’hui' : syn.planifiees.length > 1 ? 'Prochain apport calculé' : `Apport calculé pour ${dateLongue(first.date)}`;
       principal = `<p class="pil-titre is-seuil">${esc(titre)}</p>
         ${saisieJour > 0 ? `<p class="pil-dose">Irrigation saisie aujourd’hui : ${f1(saisieJour)} mm.</p>` : ''}
         ${first ? blocApport(quand, first.net, first.brut) : ''}`;
     } else {
-      principal = `<p class="pil-titre is-ok">Seuil d’irrigation non atteint${syn.horizon ? ` d’ici ${esc(dateLongue(syn.horizon))}` : ''}</p>`;
+      principal = `<p class="pil-titre is-ok">Seuil d’irrigation non atteint</p>
+        <p class="pil-dose">Aucun apport n’est calculé : l’eau du sol reste au-dessus du seuil d’irrigation.</p>`;
     }
-    // Apports identiques sur des jours consécutifs : une seule ligne « chaque jour du … au … »
+
+    // Prévision en quelques lignes, comme un bilan : apports, consommation, pluie, eau restante
+    const total = syn.besoinBrut;
     const groupes = [];
     for (const x of syn.planifiees) {
       const g = groupes[groupes.length - 1];
       if (g && Math.abs(g.brut - x.brut) < 0.05 && ecartJours(g.fin, x.date) === 1) { g.fin = x.date; g.n++; }
       else groupes.push({ debut: x.date, fin: x.date, brut: x.brut, n: 1 });
     }
-    const liste = syn.planifiees.length > 1
-      ? `<p class="pil-sous-titre">Apports calculés sur la période</p><ul class="pil-plan">${groupes.map(g => `<li><span>${g.n > 1 ? `Chaque jour du ${esc(dateCourte(g.debut))} au ${esc(dateCourte(g.fin))}` : esc(dateCourte(g.debut))}</span><span>${f1(g.brut)} mm · ${f0(IR.mmVersM3ha(g.brut))} m³/ha${avecPluvio ? ` · ${IR.formatDuree(g.brut / pluvio)}` : ''}</span></li>`).join('')}</ul>`
-      : '';
-    // Les 8 prochains jours en quelques chiffres
-    const total = syn.besoinBrut;
+    const detailApports = syn.planifiees.length > 1
+      ? groupes.map(g => `${periodeCourte(g.debut, g.fin, today)}${g.n > 1 ? ', chaque jour' : ''} : ${f1(g.brut)} mm${avecPluvio ? ` (${IR.formatDuree(g.brut / pluvio)})` : ''}`)
+      : [];
+    if (sys?.frequent && syn.planifiees.length > 1) detailApports.push(`soit ${f1(total / 8)} mm par jour en moyenne${avecPluvio ? ` (${IR.formatDuree(total / 8 / pluvio)} de poste)` : ''}`);
     const finPeriode = res.jours.find(j => j.date === syn.horizon);
-    const faits = [
-      ['Apports calculés', total > 0 ? `<b>${f1(total)} mm</b> · ${f0(IR.mmVersM3ha(total))} m³/ha` : '<b>aucun</b>'],
-      sys?.frequent && total > 0 ? ['Soit en moyenne par jour', `${f1(total / 8)} mm${avecPluvio ? ` · ${IR.formatDuree(total / 8 / pluvio)} de poste` : ''}`] : null,
-      ['Consommation de la culture', `${f1(syn.etcPrevue)} mm`],
-      ['Pluie prévue', syn.pluiePrevue > 0.2 ? `${f1(syn.pluiePrevue)} mm` : 'pas de pluie notable'],
-      finPeriode ? [`Eau disponible le ${dateCourte(finPeriode.date)}`, `${f0(finPeriode.taw - finPeriode.dr)} mm`] : null
-    ].filter(Boolean);
+    const lignes = [];
+    if (syn.planifiees.length) lignes.push({ k: 'Apports calculés', v: `${f1(total)} mm · ${f0(IR.mmVersM3ha(total))} m³/ha`, details: detailApports });
+    lignes.push({ k: 'Consommation de la culture', v: `${f1(syn.etcPrevue)} mm` });
+    lignes.push({ k: 'Pluie prévue', v: syn.pluiePrevue > 0.2 ? `${f1(syn.pluiePrevue)} mm` : 'pas de pluie notable' });
+    if (finPeriode) {
+      const dispoFin = finPeriode.taw - finPeriode.dr;
+      const ecart = dispoFin - (finPeriode.taw - finPeriode.seuil);
+      const position = ecart >= 0.5 ? `${f0(ecart)} mm au-dessus du seuil d’irrigation` : ecart <= -0.5 ? `${f0(-ecart)} mm sous le seuil d’irrigation` : 'au niveau du seuil d’irrigation';
+      lignes.push({ k: 'Eau disponible en fin de période', v: `${f0(dispoFin)} mm`, details: horsSaison ? [] : [position] });
+    }
+    const blocPrevision = `<p class="pil-sous-titre">${syn.horizon ? `Prévision jusqu’au ${esc(dateLongue(syn.horizon))}` : 'Prévision sur 8 jours'}</p>
+      <div class="pil-faits">${lignes.map(l => `<div class="pil-fait"><span>${esc(l.k)}</span><b>${l.v}</b></div>${l.details?.length ? `<ul class="pil-fait-detail">${l.details.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}`).join('')}</div>`;
+
     // Pluies annoncées au-delà de J+2 : prévision incertaine, signalée (elles sont comptées telles qu'annoncées)
     const limite = addDaysISO(today, 2);
     const lointaines = res.jours.filter(j => j.date > limite && (!syn.horizon || j.date <= syn.horizon) && j.pluie >= 0.5);
@@ -704,9 +727,7 @@ export async function mount(root, ctx) {
       <div class="pil-card pil-situation">
         <p class="pil-kicker">Situation au ${esc(dateLongue(today))}</p>
         ${principal}
-        ${liste}
-        <p class="pil-sous-titre">Sur les 8 prochains jours${syn.horizon ? ` (jusqu’au ${esc(dateCourte(syn.horizon))})` : ''}</p>
-        <dl class="pil-faits">${faits.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>
+        ${blocPrevision}
         ${avertPluie}
         <p class="pil-mention">Estimation à confronter au terrain (sondes, tensiomètres) : la décision d’irriguer revient à l’exploitant.</p>
       </div>
