@@ -58,6 +58,7 @@ const TEMPLATE = `
           </div>
         </div>
         <div class="adm-setup hidden" id="accSetup"></div>
+        <p class="adm-hint adm-note hidden" id="accActiviteHint"></p>
         <div id="accList" class="adm-list"></div>
       </div>
     </section>
@@ -151,6 +152,11 @@ const TEMPLATE = `
     </form>
   </dialog>
 
+  <!-- Fiche utilisateur ------------------------------------------------------ -->
+  <dialog class="adm-dialog is-wide" id="accFiche" aria-labelledby="ficheTitre">
+    <div class="adm-form adm-fiche" id="ficheContenu"></div>
+  </dialog>
+
   <!-- Station --------------------------------------------------------------- -->
   <dialog class="adm-dialog is-wide" id="staDialog" aria-labelledby="staDialogTitle">
     <form method="dialog" id="staForm" class="adm-form" novalidate>
@@ -229,6 +235,8 @@ export async function mount(root, ctx) {
     tab: TABS.some(t => t.id === storage.get('admin.tab')) ? storage.get('admin.tab') : 'comptes',
     accounts: null,
     accountsError: null,
+    // Dernière activité réelle disponible (true), fonction à jour sans le SQL (false), ancienne fonction (undefined)
+    activite: undefined,
     latest: new Map(),
     dictionary: [],
     sensorRows: [],
@@ -318,7 +326,9 @@ export async function mount(root, ctx) {
       const data = await callAdmin('list');
       state.accounts = data.accounts || [];
       state.accountsError = null;
+      state.activite = data.activite_disponible;
       renderAccounts();
+      if ($('accFiche').open) renderFiche();
     } catch (error) {
       state.accounts = null;
       state.accountsError = error;
@@ -367,11 +377,19 @@ export async function mount(root, ctx) {
     const list = state.accounts || [];
     const query = $('accSearch').value.trim().toLowerCase();
     const shown = query
-      ? list.filter(a => [a.email, a.prenom, a.nom, a.structure, a.fonction, a.commune].some(v => String(v || '').toLowerCase().includes(query)))
+      ? list.filter(a => [a.email, a.prenom, a.nom, a.structure, a.fonction, a.commune, a.telephone].some(v => String(v || '').toLowerCase().includes(query)))
       : list;
     const count = role => list.filter(a => roleOf(a) === role).length;
     const pending = list.filter(a => !a.confirmed).length;
     $('accSummary').textContent = `${list.length} compte${list.length > 1 ? 's' : ''} · ${count('full')} full admin · ${count('admin')} admin · ${count('normal')} normal${pending ? ` · ${pending} invitation${pending > 1 ? 's' : ''} en attente` : ''}`;
+    // Sans la mise à jour, Supabase ne donne que la dernière saisie du mot de passe
+    const hint = $('accActiviteHint');
+    hint.classList.toggle('hidden', state.activite === true);
+    if (state.activite !== true) {
+      hint.innerHTML = `<strong>Dernière activité :</strong> la liste affiche pour l’instant la dernière saisie du mot de passe. Une session déjà ouverte se prolonge seule sans changer cette date : un compte utilisé hier peut afficher « il y a 9 jours ». Pour voir la dernière utilisation réelle, ${state.activite === false
+        ? 'exécutez une fois <code>supabase/activite_comptes.sql</code> dans Supabase (<em>SQL Editor</em>).'
+        : 'exécutez une fois <code>supabase/activite_comptes.sql</code> dans Supabase (<em>SQL Editor</em>), puis mettez à jour la fonction <code>sam-admin</code> (<em>Edge Functions</em> → <em>sam-admin</em> → <em>Code</em> : coller <code>supabase/functions/sam-admin/index.ts</code> → <em>Deploy</em>).'}`;
+    }
     if (!shown.length) {
       $('accList').innerHTML = `<p class="adm-empty">${query ? 'Aucun compte ne correspond à la recherche.' : 'Aucun compte.'}</p>`;
       return;
@@ -379,30 +397,20 @@ export async function mount(root, ctx) {
     const meId = ctx.user?.id;
     $('accList').innerHTML = `
       <table class="adm-table">
-        <thead><tr><th>Personne</th><th>Structure</th><th>Rôle</th><th>Statut</th><th>Dernière connexion</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th>Personne</th><th>Structure</th><th>Rôle</th><th>Statut</th><th>Dernière activité</th><th><span class="sr-only">Fiche</span></th></tr></thead>
         <tbody>${shown.map(a => {
           const status = accountStatus(a);
           const name = [a.prenom, a.nom].filter(Boolean).join(' ');
           const self = a.id === meId;
           const role = roleOf(a);
-          const actions = [
-            ...(self ? [] : Object.keys(ROLES).filter(r => r !== role)
-              .map(r => `<button type="button" data-act="role" data-role="${r}">Passer en « ${ROLES[r].label} »</button>`)),
-            a.confirmed
-              ? `<button type="button" data-act="reset">Envoyer un lien de mot de passe</button>`
-              : `<button type="button" data-act="reinvite">Renvoyer l’invitation</button>`,
-            self ? '' : (a.banned
-              ? `<button type="button" data-act="unsuspend">Réactiver l’accès</button>`
-              : `<button type="button" data-act="suspend">Suspendre l’accès</button>`),
-            self ? '' : `<button type="button" data-act="delete" class="is-danger">Supprimer le compte</button>`
-          ].filter(Boolean).join('');
+          const derniere = a.derniere_activite ?? a.last_sign_in_at;
           return `<tr data-id="${escapeHtml(a.id)}">
-            <td data-label="Personne"><strong>${escapeHtml(name || a.email)}</strong>${name ? `<span class="adm-muted">${escapeHtml(a.email)}</span>` : ''}${self ? '<span class="adm-tag">vous</span>' : ''}</td>
-            <td data-label="Structure">${escapeHtml(a.structure || '—')}${a.fonction ? `<span class="adm-muted">${escapeHtml(a.fonction)}</span>` : ''}</td>
-            <td data-label="Rôle"><span class="adm-badge is-${role}" title="${escapeHtml(ROLES[role].help)}">${ROLES[role].label}</span></td>
-            <td data-label="Statut"><span class="adm-status is-${status.key}">${status.label}</span>${!a.confirmed && a.invited_at ? `<span class="adm-muted">le ${escapeHtml(fmtDateTime(a.invited_at))}</span>` : ''}</td>
-            <td data-label="Dernière connexion">${a.last_sign_in_at ? `${escapeHtml(fmtDateTime(a.last_sign_in_at))}<span class="adm-muted">${ago(a.last_sign_in_at)}</span>` : 'jamais'}</td>
-            <td class="adm-cell-actions"><details class="adm-menu"><summary>Gérer</summary><div class="adm-menu-list">${actions}</div></details></td>
+            <td data-label="Personne"><div><button type="button" class="adm-lien" data-fiche="${escapeHtml(a.id)}">${escapeHtml(name || a.email)}</button>${name ? `<span class="adm-muted">${escapeHtml(a.email)}</span>` : ''}${self ? '<span class="adm-tag">vous</span>' : ''}</div></td>
+            <td data-label="Structure"><div>${escapeHtml(a.structure || '—')}${a.fonction ? `<span class="adm-muted">${escapeHtml(a.fonction)}</span>` : ''}</div></td>
+            <td data-label="Rôle"><div><span class="adm-badge is-${role}" title="${escapeHtml(ROLES[role].help)}">${ROLES[role].label}</span></div></td>
+            <td data-label="Statut"><div><span class="adm-status is-${status.key}">${status.label}</span>${!a.confirmed && a.invited_at ? `<span class="adm-muted">le ${escapeHtml(fmtDateTime(a.invited_at))}</span>` : ''}</div></td>
+            <td data-label="Dernière activité"><div>${derniere ? `${escapeHtml(fmtDateTime(derniere))}<span class="adm-muted">${ago(derniere)}</span>` : 'jamais'}</div></td>
+            <td class="adm-cell-actions"><button type="button" class="adm-button is-small" data-fiche="${escapeHtml(a.id)}">Fiche utilisateur</button></td>
           </tr>`;
         }).join('')}</tbody>
       </table>`;
@@ -436,16 +444,152 @@ export async function mount(root, ctx) {
         ctx.ui.toast(`Compte de ${who} supprimé.`);
       }
       await loadAccounts();
+      if ($('accFiche').open) renderFiche();
     } catch (error) {
       ctx.ui.toast(`Action impossible : ${error.message}`, 6000);
     }
   }
 
   $('accList').addEventListener('click', event => {
-    const button = event.target.closest('button[data-act]');
-    if (!button) return;
-    button.closest('details')?.removeAttribute('open');
-    accountAction(button.closest('tr').dataset.id, button.dataset.act, button.dataset.role);
+    const button = event.target.closest('[data-fiche]');
+    if (button) ouvrirFiche(button.dataset.fiche);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Fiche utilisateur : informations renseignées, connexion, rôle, accès
+  // ---------------------------------------------------------------------------
+  let ficheId = null;
+  const nomStation = id => store.list.find(s => s.id === id)?.nom || id;
+  const lienTel = t => `tel:${String(t).replace(/[^\d+]/g, '')}`;
+  const quand = v => (v ? `${fmtDateTime(v)} · ${ago(v)}` : 'jamais');
+
+  async function ouvrirFiche(id) {
+    ficheId = id;
+    // Noms des stations (favoris, accès) : la liste des stations peut ne pas être chargée
+    if (!store.list.length) await store.load().catch(() => {});
+    renderFiche();
+    const dialog = $('accFiche');
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function renderFiche() {
+    const dialog = $('accFiche');
+    const a = (state.accounts || []).find(x => x.id === ficheId);
+    if (!a) { if (dialog.open) dialog.close(); return; }
+    const self = a.id === ctx.user?.id;
+    const role = roleOf(a);
+    const status = accountStatus(a);
+    const name = accountLabel(a);
+    const initiales = ([a.prenom, a.nom].filter(Boolean).map(x => x.trim()[0]).join('') || a.email[0] || '?').toUpperCase();
+    const vide = '<span class="adm-vide">non renseigné</span>';
+    const txt = v => (v ? escapeHtml(v) : vide);
+    const ligne = (label, value) => `<div><dt>${escapeHtml(label)}</dt><dd>${value}</dd></div>`;
+    const favoris = (a.stations_favorites || []).map(nomStation);
+    const activite = state.activite === true;
+    $('ficheContenu').innerHTML = `
+      <div class="adm-fiche-tete">
+        <span class="adm-avatar" aria-hidden="true">${escapeHtml(initiales)}</span>
+        <div class="adm-fiche-id">
+          <h2 id="ficheTitre">${escapeHtml(name)}${self ? ' <span class="adm-tag">vous</span>' : ''}</h2>
+          <a href="mailto:${escapeHtml(a.email)}">${name === a.email ? 'Écrire un mail' : escapeHtml(a.email)}</a>
+          <div class="adm-fiche-badges"><span class="adm-badge is-${role}">${ROLES[role].label}</span><span class="adm-status is-${status.key}">${status.label}</span></div>
+        </div>
+        <button type="button" class="adm-fermer" data-fiche-fermer aria-label="Fermer la fiche">×</button>
+      </div>
+
+      <section class="adm-fiche-bloc">
+        <h3>Informations renseignées</h3>
+        <dl class="adm-fiche-dl">
+          ${ligne('Prénom', txt(a.prenom))}
+          ${ligne('Nom', txt(a.nom))}
+          ${ligne('Structure / exploitation', txt(a.structure))}
+          ${ligne('Fonction', txt(a.fonction))}
+          ${ligne('Téléphone', a.telephone ? `<a href="${escapeHtml(lienTel(a.telephone))}">${escapeHtml(a.telephone)}</a>` : vide)}
+          ${ligne('Commune', txt(a.commune))}
+          ${'stations_favorites' in a ? ligne('Stations favorites', favoris.length ? escapeHtml(favoris.join(', ')) : '<span class="adm-vide">aucune</span>') : ''}
+        </dl>
+        <p class="adm-hint">Saisies par la personne dans « Mon compte » ou lors de l’invitation${a.profil_maj ? ` ; dernière mise à jour le ${escapeHtml(fmtDateTime(a.profil_maj))}` : ''}.</p>
+      </section>
+
+      <section class="adm-fiche-bloc">
+        <h3>Connexion</h3>
+        <dl class="adm-fiche-dl">
+          ${ligne('Compte créé', a.created_at ? escapeHtml(fmtDateTime(a.created_at)) : '—')}
+          ${a.confirmed ? ligne('Compte activé', 'oui') : ligne('Invitation envoyée', a.invited_at ? `${escapeHtml(fmtDateTime(a.invited_at))}, pas encore acceptée` : 'pas encore acceptée')}
+          ${activite ? ligne('Dernière activité', escapeHtml(quand(a.derniere_activite))) : ''}
+          ${ligne('Dernière saisie du mot de passe', escapeHtml(quand(a.last_sign_in_at)))}
+        </dl>
+        <p class="adm-hint">${activite
+          ? 'Dernière activité : dernière utilisation de SAM Outils, à une heure près. Le mot de passe n’est demandé qu’à l’ouverture d’une nouvelle session ; une session ouverte se prolonge seule.'
+          : 'Le mot de passe n’est demandé qu’à l’ouverture d’une nouvelle session ; une session ouverte se prolonge seule, sans changer cette date. La dernière utilisation réelle s’affichera une fois la mise à jour installée (voir la liste des comptes).'}</p>
+      </section>
+
+      <section class="adm-fiche-bloc">
+        <h3>Rôle</h3>
+        <div class="adm-fiche-roles">${Object.entries(ROLES).map(([k, r]) => `<label class="adm-check"><input type="radio" name="ficheRole" value="${k}"${k === role ? ' checked' : ''}${self ? ' disabled' : ''}><span><strong>${r.label}</strong> : ${escapeHtml(r.help)}</span></label>`).join('')}</div>
+        ${self ? '<p class="adm-hint">Vous ne pouvez pas modifier votre propre rôle.</p>' : '<div><button type="button" class="adm-button is-primary" data-fiche-act="role" disabled>Enregistrer le rôle</button></div>'}
+      </section>
+
+      <section class="adm-fiche-bloc">
+        <h3>Accès aux données réservées des stations</h3>
+        <div id="ficheStations">${role === 'normal' ? '<p class="adm-muted">Chargement…</p>' : '<p class="adm-muted">Les rôles admin et full admin voient toutes les données de toutes les stations.</p>'}</div>
+      </section>
+
+      <section class="adm-fiche-bloc">
+        <h3>Accès au site</h3>
+        <div class="adm-fiche-actions">
+          ${a.confirmed ? '<button type="button" class="adm-button" data-fiche-act="reset">Envoyer un lien de mot de passe</button>' : '<button type="button" class="adm-button" data-fiche-act="reinvite">Renvoyer l’invitation</button>'}
+          ${self ? '' : a.banned ? '<button type="button" class="adm-button" data-fiche-act="unsuspend">Réactiver l’accès</button>' : '<button type="button" class="adm-button" data-fiche-act="suspend">Suspendre l’accès</button>'}
+        </div>
+        ${self ? '' : `<p class="adm-hint">${a.banned ? 'Accès suspendu : la personne ne peut plus se connecter. Son compte et ses données sont conservés.' : 'Suspendre : la personne ne peut plus se connecter ; son compte et ses données sont conservés.'}</p>`}
+      </section>
+
+      ${self ? '' : `<section class="adm-fiche-bloc is-danger">
+        <h3>Supprimer le compte</h3>
+        <p class="adm-hint">Définitif : le compte et ses parcelles du Bilan irrigation sont supprimés.</p>
+        <div><button type="button" class="adm-button is-danger" data-fiche-act="delete">Supprimer le compte</button></div>
+      </section>`}
+      <div class="adm-dialog-actions"><button type="button" class="adm-button" data-fiche-fermer>Fermer</button></div>`;
+    if (role === 'normal') chargerAccesStations(a.id);
+  }
+
+  // Stations dont les données réservées (météo, irrigation) sont ouvertes à ce compte
+  async function chargerAccesStations(id) {
+    const box = $('ficheStations');
+    try {
+      const { data, error } = await supabase.from('station_acces').select('station_id,meteo,irrigation').eq('user_id', id);
+      if (error) throw error;
+      if (ficheId !== id || !box.isConnected) return;
+      const lignes = (data || []).filter(g => g.meteo || g.irrigation)
+        .map(g => ({ nom: nomStation(g.station_id), quoi: [g.meteo ? 'météo' : '', g.irrigation ? 'irrigation' : ''].filter(Boolean).join(' et ') }))
+        .sort((x, y) => x.nom.localeCompare(y.nom, 'fr'));
+      box.innerHTML = lignes.length
+        ? `<ul class="adm-fiche-liste">${lignes.map(l => `<li><strong>${escapeHtml(l.nom)}</strong> : données ${escapeHtml(l.quoi)}</li>`).join('')}</ul><p class="adm-hint">En plus des stations ouvertes à tous. Se règle dans l’onglet Stations.</p>`
+        : '<p class="adm-muted">Aucun accès particulier : la personne voit les stations ouvertes à tous. Se règle dans l’onglet Stations.</p>';
+    } catch {
+      if (ficheId === id && box.isConnected) box.innerHTML = '<p class="adm-muted">Accès par station pas encore configurés (supabase/acces_stations.sql).</p>';
+    }
+  }
+
+  $('accFiche').addEventListener('click', async event => {
+    if (event.target.closest('[data-fiche-fermer]')) { $('accFiche').close(); return; }
+    const button = event.target.closest('[data-fiche-act]');
+    if (!button || button.disabled) return;
+    const act = button.dataset.ficheAct;
+    const role = $('accFiche').querySelector('input[name="ficheRole"]:checked')?.value;
+    // Bouton bloqué pendant l'action (pas de double envoi)
+    button.disabled = true;
+    try {
+      await accountAction(ficheId, act, act === 'role' ? role : undefined);
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
+  });
+  $('accFiche').addEventListener('change', event => {
+    if (event.target.name !== 'ficheRole') return;
+    const a = (state.accounts || []).find(x => x.id === ficheId);
+    const button = $('accFiche').querySelector('[data-fiche-act="role"]');
+    if (a && button) button.disabled = event.target.value === roleOf(a);
   });
   $('accSearch').addEventListener('input', () => renderAccounts());
 

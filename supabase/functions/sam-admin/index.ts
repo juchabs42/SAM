@@ -15,6 +15,9 @@
 //
 // La clé d'administration (service_role / secret) est fournie automatiquement par
 // Supabase à la fonction : elle n'apparaît ni dans le site, ni sur GitHub.
+//
+// Dernière activité des comptes : exécuter une fois supabase/activite_comptes.sql
+// (sinon la liste affiche seulement la dernière saisie du mot de passe).
 // =============================================================================
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -72,7 +75,7 @@ Deno.serve(async (req: Request) => {
     // 2. Action demandée
     const body = await req.json().catch(() => ({}));
     switch (body?.action) {
-      case 'list': return reply({ accounts: await listAccounts(admin) });
+      case 'list': return reply(await listAccounts(admin));
       case 'invite': return reply(await invite(admin, body));
       case 'reinvite': return reply(await reinvite(admin, body));
       case 'setRole': return reply(await setRole(admin, body, myEmail));
@@ -103,17 +106,24 @@ async function allUsers(admin: Admin) {
 }
 
 async function listAccounts(admin: Admin) {
-  const [users, admins, profiles] = await Promise.all([
+  const [users, admins, profiles, activites] = await Promise.all([
     allUsers(admin),
     admin.from('sam_admins').select('*'),
-    admin.from('profils').select('id,prenom,nom,structure,fonction,telephone,commune')
+    admin.from('profils').select('*'),
+    // Dernier renouvellement de session (supabase/activite_comptes.sql) : dernière utilisation réelle
+    admin.rpc('sam_dernieres_activites')
   ]);
   if (admins.error) throw admins.error;
   const roles = new Map((admins.data ?? []).map((a: { email: string; niveau?: string }) => [a.email, a.niveau === 'admin' ? 'admin' : 'full']));
   // La table des profils peut ne pas encore exister : les comptes restent listés.
   const byId = new Map((profiles.error ? [] : profiles.data ?? []).map((p: { id: string }) => [p.id, p]));
+  const activite = new Map((activites.error ? [] : activites.data ?? []).map((r: { user_id: string; derniere_activite: string }) => [r.user_id, r.derniere_activite]));
+  const plusRecent = (...dates: (string | null | undefined)[]) => {
+    const t = dates.filter(Boolean).map(d => new Date(d as string).getTime()).filter(Number.isFinite);
+    return t.length ? new Date(Math.max(...t)).toISOString() : null;
+  };
   const now = Date.now();
-  return users.map((u: Admin) => {
+  const accounts = users.map((u: Admin) => {
     const p: Admin = byId.get(u.id) ?? {};
     const meta = u.user_metadata ?? {};
     return {
@@ -122,6 +132,8 @@ async function listAccounts(admin: Admin) {
       created_at: u.created_at ?? null,
       invited_at: u.invited_at ?? null,
       last_sign_in_at: u.last_sign_in_at ?? null,
+      // Dernière utilisation : dernière connexion ou dernier renouvellement de session
+      derniere_activite: plusRecent(u.last_sign_in_at, activite.get(u.id)),
       confirmed: Boolean(u.email_confirmed_at),
       banned: Boolean(u.banned_until && new Date(u.banned_until).getTime() > now),
       role: roles.get(String(u.email ?? '').toLowerCase()) ?? 'normal',
@@ -131,9 +143,12 @@ async function listAccounts(admin: Admin) {
       structure: p.structure ?? meta.structure ?? null,
       fonction: p.fonction ?? meta.fonction ?? null,
       telephone: p.telephone ?? meta.telephone ?? null,
-      commune: p.commune ?? null
+      commune: p.commune ?? null,
+      stations_favorites: Array.isArray(p.stations_favorites) ? p.stations_favorites : [],
+      profil_maj: p.updated_at ?? null
     };
   }).sort((a: Admin, b: Admin) => a.email.localeCompare(b.email));
+  return { accounts, activite_disponible: !activites.error };
 }
 
 async function invite(admin: Admin, body: Admin) {

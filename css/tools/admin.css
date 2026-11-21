@@ -148,47 +148,80 @@
 .tool-admin .adm-state.is-off::before { background: #5f6670; }
 .tool-admin .adm-state.is-pending::before { background: #fff; border: 1.5px dashed #6b7280; }
 
-/* Menu « Gérer » d'un compte */
-.tool-admin .adm-menu { position: relative; display: inline-block; text-align: left; }
-.tool-admin .adm-menu summary {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--sam-line);
-  border-radius: 9px;
-  background: #fff;
-  font-size: .82rem;
-  font-weight: 650;
-  list-style: none;
+/* Liste des comptes : nom cliquable, note sur la dernière activité */
+.tool-admin .adm-lien {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sam-ink);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
   cursor: pointer;
 }
-.tool-admin .adm-menu summary::-webkit-details-marker { display: none; }
-.tool-admin .adm-menu summary::after { content: "▾"; margin-left: 6px; font-size: .7rem; }
-.tool-admin .adm-menu[open] summary { border-color: var(--sam-red-700); color: var(--sam-red-700); }
-.tool-admin .adm-menu-list {
-  position: absolute;
-  right: 0;
-  z-index: 20;
-  display: grid;
-  min-width: 260px;
-  margin-top: 6px;
-  padding: 6px;
-  border: 1px solid var(--sam-line);
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 12px 30px rgba(17, 24, 39, .18);
+.tool-admin .adm-lien:hover,
+.tool-admin .adm-lien:focus-visible { color: var(--sam-red-700); text-decoration-color: currentColor; }
+.tool-admin .adm-note { padding: 10px 12px; border: 1px solid var(--sam-line); border-radius: 10px; background: var(--sam-bg-soft); line-height: 1.45; }
+.tool-admin .adm-note code { font-size: .78rem; }
+
+/* Fiche utilisateur */
+.tool-admin .adm-fiche { gap: 16px; }
+.tool-admin .adm-fiche-tete { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 14px; }
+.tool-admin .adm-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--sam-red-700);
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: .02em;
 }
-.tool-admin .adm-menu-list button {
-  padding: 9px 11px;
+.tool-admin .adm-fiche-id { display: grid; gap: 3px; min-width: 0; }
+.tool-admin .adm-fiche-id h2 { overflow-wrap: anywhere; }
+.tool-admin .adm-fiche-id a { color: var(--sam-ink-2); font-size: .9rem; overflow-wrap: anywhere; }
+.tool-admin .adm-fiche-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 4px; }
+.tool-admin .adm-fermer {
+  width: 36px;
+  height: 36px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 50%;
   background: none;
-  text-align: left;
-  font-size: .88rem;
+  color: var(--sam-muted);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
 }
-.tool-admin .adm-menu-list button:hover { background: var(--sam-bg-soft); }
-.tool-admin .adm-menu-list button.is-danger { color: #b71c1c; }
+.tool-admin .adm-fermer:hover { background: var(--sam-bg-soft); color: var(--sam-ink); }
+.tool-admin .adm-fiche-bloc { display: grid; gap: 9px; padding-top: 14px; border-top: 1px solid var(--sam-line-2); }
+.tool-admin .adm-fiche-bloc h3 { margin: 0; color: var(--sam-muted); font-size: .76rem; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+.tool-admin .adm-fiche-bloc.is-danger h3 { color: #b71c1c; }
+.tool-admin .adm-fiche-bloc > div:has(> .adm-button) { display: flex; }
+.tool-admin .adm-fiche-dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 20px; margin: 0; }
+.tool-admin .adm-fiche-dl div { display: grid; gap: 2px; min-width: 0; }
+.tool-admin .adm-fiche-dl dt { color: var(--sam-muted); font-size: .78rem; font-weight: 600; }
+.tool-admin .adm-fiche-dl dd { margin: 0; font-size: .95rem; overflow-wrap: anywhere; }
+.tool-admin .adm-fiche-dl dd a { color: var(--sam-red-700); font-weight: 650; }
+.tool-admin .adm-vide { color: #9aa0a8; font-style: italic; }
+.tool-admin .adm-fiche-roles { display: grid; gap: 6px; }
+.tool-admin .adm-fiche-roles .adm-check { padding: 9px 12px; border: 1px solid var(--sam-line); border-radius: 10px; cursor: pointer; }
+.tool-admin .adm-fiche-roles .adm-check:has(input:checked) { border-color: var(--sam-red-700); background: #fff1f2; }
+.tool-admin .adm-fiche-roles .adm-check:has(input:disabled) { cursor: default; opacity: .7; }
+.tool-admin .adm-fiche-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tool-admin .adm-fiche-liste { margin: 0; padding-left: 18px; font-size: .92rem; }
+.tool-admin .adm-fiche-liste li { margin: 3px 0; }
+@media (max-width: 560px) {
+  .tool-admin .adm-fiche-dl { grid-template-columns: minmax(0, 1fr); }
+  .tool-admin .adm-fiche-tete { gap: 10px; }
+  .tool-admin .adm-avatar { width: 42px; height: 42px; font-size: .95rem; }
+  .tool-admin .adm-fiche-actions > .adm-button { flex: 1 1 100%; }
+}
 
 /* Encadrés */
 .tool-admin .adm-setup,
@@ -244,7 +277,7 @@
 .tool-admin .adm-show.is-off { color: #8a5a00; }
 .tool-admin .adm-table tr.is-masked { background: #fffaf0; }
 
-/* Fenêtres (invitation, station, confirmation) */
+/* Fenêtres (invitation, fiche utilisateur, station, confirmation) */
 .tool-admin .adm-dialog {
   width: min(560px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
@@ -286,7 +319,6 @@
   .tool-admin .adm-table td.adm-cell-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; text-align: left; }
   .tool-admin .adm-table td.adm-cell-actions::before { content: none; }
   .tool-admin .adm-cell-actions .adm-button + .adm-button { margin-left: 0; }
-  .tool-admin .adm-menu-list { left: 0; right: auto; }
   .tool-admin .adm-grid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 560px) {

@@ -61,7 +61,9 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
    l'outil garde les parcelles sur l'appareil et l'indique à l'écran),
    puis `supabase/roles.sql` (trois rôles : normal, admin, full admin),
    puis `supabase/acces_stations.sql` (qui voit les données météo / irrigation de chaque station),
-   puis `supabase/capteurs_masques.sql` (capteurs affichés ou masqués, station par station).
+   puis `supabase/capteurs_masques.sql` (capteurs affichés ou masqués, station par station),
+   puis `supabase/activite_comptes.sql` (dernière activité réelle de chaque compte, affichée
+   dans Administration → Comptes).
 2. **Authentication → Sign In / Providers** : désactiver *Allow new users to sign up*.
 3. **Authentication → URL Configuration** : *Site URL* = adresse principale du site
    (aujourd'hui `https://sam.juju-chabat42.workers.dev`, plus tard le nom de domaine définitif).
@@ -70,16 +72,19 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
    d'invitation et de « mot de passe oublié ».
 4. **Authentication → Users → Add user** : *Send invitation* (la personne choisit son
    mot de passe) ou *Create new user* avec *Auto Confirm User* coché.
-5. Rôles : depuis l'onglet Administration → Comptes → *Gérer* (ou à la main, voir la fin de
+5. Rôles : depuis l'onglet Administration → Comptes → *Fiche utilisateur* (ou à la main, voir la fin de
    `supabase/roles.sql`). Table `sam_admins` : absent = normal, `niveau = 'admin'` = admin,
    `niveau = 'full'` = full admin.
 
-6. **Onglet Administration → Comptes** (inviter, changer le rôle, suspendre,
-   supprimer depuis le site) : déployer une fois la fonction `supabase/functions/sam-admin/index.ts`
+6. **Onglet Administration → Comptes** (inviter ; fiche de chaque personne : informations
+   renseignées, dernière activité, rôle, suspension, suppression) : déployer une fois la fonction `supabase/functions/sam-admin/index.ts`
    — *Edge Functions → Deploy a new function → Via Editor*, nom `sam-admin`, coller le fichier,
    *Deploy*, puis désactiver *Verify JWT* dans ses réglages (la fonction vérifie elle-même
    que l'appelant est « full admin » dans `sam_admins`). La clé d'administration lui est fournie
    par Supabase. Après une modification du fichier, recoller le code et refaire *Deploy*.
+   La colonne « Dernière activité » s'appuie sur `supabase/activite_comptes.sql` : sans lui,
+   elle montre la dernière saisie du mot de passe, qui ne bouge pas tant que la session
+   reste ouverte (elle se prolonge seule).
 7. **Mails (invitations, mot de passe oublié)** : le service d'envoi par défaut de Supabase
    n'écrit qu'aux membres de l'équipe du projet, avec un très petit nombre de mails par heure.
    Pour inviter des producteurs :
@@ -114,6 +119,7 @@ supabase/functions/   fonction « sam-admin » (gestion des comptes depuis l'ong
 supabase/roles.sql    rôles normal / admin / full admin
 supabase/acces_stations.sql  accès aux données météo / irrigation, station par station
 supabase/capteurs_masques.sql  capteurs masqués station par station (pluviomètre absent…)
+supabase/activite_comptes.sql  dernière activité réelle des comptes (sessions qui se prolongent seules)
 supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bilan hydrique
 supabase/emails/      modèles des mails d'invitation et de mot de passe (en français)
 _headers              en-têtes de sécurité (hébergement Cloudflare)
