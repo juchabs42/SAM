@@ -44,6 +44,11 @@ identité, position sur la carte, RIMpro, collecte, accès météo / irrigation 
 
 **Collecte Comsag** : automatique toutes les 30 minutes (chaque station envoie une mesure par
 heure). Synchronisation manuelle : Administration → Stations → « Synchroniser toutes les stations ».
+Comsag renvoie parfois la même mesure avec un horodatage décalé d’une seconde : la collecte la
+reconnaît (même station, moins de 60 s d’écart, aucune valeur contradictoire) et la fusionne avec
+celle déjà enregistrée, sinon la pluie de l’heure serait comptée deux fois. Les copies enregistrées
+avant cette correction ont été fusionnées le 22/11/2026 par `supabase/doublons_mesures.sql`
+(239 lignes, sauvegardées dans `sam_private.station_mesures_doublons`).
 
 **Données** : la pluviométrie n’est affichée que dans l’onglet Météo (graphique « Pluviométrie »,
 encart « Pluviométrie 24 h », colonne du résumé journalier) ; l’onglet Irrigation ne montre que les
@@ -126,6 +131,7 @@ supabase/functions/   fonction « sam-admin » (gestion des comptes depuis l'ong
 supabase/roles.sql    rôles normal / admin / full admin
 supabase/acces_stations.sql  accès aux données météo / irrigation, station par station
 supabase/capteurs_masques.sql  capteurs masqués station par station (pluviomètre absent…)
+supabase/doublons_mesures.sql  fusion des mesures Comsag reçues en double (exécuté le 22/11/2026)
 supabase/activite_comptes.sql  dernière activité réelle des comptes (sessions qui se prolongent seules)
 supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bilan hydrique
 supabase/emails/      modèles des mails d'invitation et de mot de passe (en français)

@@ -274,6 +274,33 @@ begin
   return v_nb;
 end $$;
 
+-- Une même mesure revient parfois de Comsag avec un horodatage décalé d'une seconde (ou plus,
+-- rarement) : on la reconnaît (même station, moins de 60 s d'écart, aucune valeur contradictoire)
+-- et on la fusionne avec celle déjà enregistrée au lieu de l'ajouter (sinon pluie comptée deux fois).
+create or replace function sam_private.meme_mesure(a public.station_mesures, b public.station_mesures)
+returns boolean language sql immutable set search_path = '' as $$
+  select a.station_id = b.station_id
+     and abs(extract(epoch from a.mesure_le - b.mesure_le)) <= 60
+     and (a.t_air is null or b.t_air is null or a.t_air = b.t_air)
+     and (a.hr is null or b.hr is null or a.hr = b.hr)
+     and (a.pluie is null or b.pluie is null or a.pluie = b.pluie)
+     and not exists (
+       select 1 from jsonb_each(coalesce(a.autres, '{}'::jsonb)) e
+       where e.value <> 'null'::jsonb
+         and coalesce(b.autres -> e.key, 'null'::jsonb) <> 'null'::jsonb
+         and b.autres -> e.key <> e.value)
+$$;
+
+-- Complète les capteurs de a avec ceux de b (valeurs de a prioritaires, valeurs vides ignorées).
+create or replace function sam_private.fusion_autres(a jsonb, b jsonb)
+returns jsonb language sql immutable set search_path = '' as $$
+  select coalesce(a, '{}'::jsonb) || coalesce((
+    select jsonb_object_agg(e.key, e.value)
+    from jsonb_each(coalesce(b, '{}'::jsonb)) e
+    where e.value <> 'null'::jsonb and coalesce(a -> e.key, 'null'::jsonb) = 'null'::jsonb
+  ), '{}'::jsonb)
+$$;
+
 -- Range les réponses reçues dans station_mesures ; renvoie le nombre de mesures écrites.
 create or replace function sam_private.comsag_integrer()
 returns integer
@@ -285,6 +312,8 @@ declare
   v_total integer := 0;
   v_capteurs text[];
   v_erreur text;
+  v_m public.station_mesures;          -- mesure reçue
+  v_existante public.station_mesures;  -- même mesure déjà enregistrée
 begin
   for r in
     select q.request_id, q.station_id, q.demande_le,
@@ -327,18 +356,45 @@ begin
     if v_erreur is not null then
       update public.stations set derniere_synchro = now(), derniere_erreur = v_erreur where id = r.station_id;
     else
-      insert into public.station_mesures (station_id, mesure_le, t_air, hr, pluie, autres)
-      select r.station_id,
-             sam_private.horodatage(d ->> 'timestamp'),
-             sam_private.nombre(d ->> 't1'),
-             sam_private.nombre(d ->> 'hyg1'),
-             sam_private.nombre(d ->> 'pluv'),
-             d - 'timestamp' - 't1' - 'hyg1' - 'pluv'
-      from jsonb_array_elements(coalesce(v_json -> 'datas', '[]'::jsonb)) as d
-      where jsonb_typeof(d) = 'object' and sam_private.horodatage(d ->> 'timestamp') is not null
-      on conflict (station_id, mesure_le) do update
-        set t_air = excluded.t_air, hr = excluded.hr, pluie = excluded.pluie, autres = excluded.autres;
-      get diagnostics v_lignes = row_count;
+      v_lignes := 0;
+      for v_m in
+        select r.station_id,
+               sam_private.horodatage(x ->> 'timestamp'),
+               sam_private.nombre(x ->> 't1'),
+               sam_private.nombre(x ->> 'hyg1'),
+               sam_private.nombre(x ->> 'pluv'),
+               x - 'timestamp' - 't1' - 'hyg1' - 'pluv'
+        from jsonb_array_elements(coalesce(v_json -> 'datas', '[]'::jsonb)) as x
+        where jsonb_typeof(x) = 'object' and sam_private.horodatage(x ->> 'timestamp') is not null
+        order by 2
+      loop
+        -- Même mesure déjà enregistrée à quelques secondes près : on la complète.
+        select m.* into v_existante
+        from public.station_mesures m
+        where m.station_id = v_m.station_id
+          and m.mesure_le between v_m.mesure_le - interval '60 seconds' and v_m.mesure_le + interval '60 seconds'
+          and m.mesure_le <> v_m.mesure_le
+          and sam_private.meme_mesure(m, v_m)
+        order by abs(extract(epoch from m.mesure_le - v_m.mesure_le)), m.mesure_le
+        limit 1;
+        if found then
+          update public.station_mesures as sm set
+            t_air = coalesce(sm.t_air, v_m.t_air),
+            hr = coalesce(sm.hr, v_m.hr),
+            pluie = coalesce(sm.pluie, v_m.pluie),
+            autres = sam_private.fusion_autres(sm.autres, v_m.autres)
+          where sm.station_id = v_existante.station_id and sm.mesure_le = v_existante.mesure_le;
+        else
+          insert into public.station_mesures as sm (station_id, mesure_le, t_air, hr, pluie, autres)
+          values (v_m.station_id, v_m.mesure_le, v_m.t_air, v_m.hr, v_m.pluie, v_m.autres)
+          on conflict (station_id, mesure_le) do update set
+            t_air = coalesce(excluded.t_air, sm.t_air),
+            hr = coalesce(excluded.hr, sm.hr),
+            pluie = coalesce(excluded.pluie, sm.pluie),
+            autres = sam_private.fusion_autres(excluded.autres, sm.autres);
+        end if;
+        v_lignes := v_lignes + 1;
+      end loop;
       v_total := v_total + v_lignes;
 
       select coalesce(array_agg(distinct k order by k), '{}') into v_capteurs
@@ -364,6 +420,8 @@ end $$;
 
 revoke all on function sam_private.comsag_demander(text, timestamptz) from public, anon, authenticated;
 revoke all on function sam_private.comsag_integrer() from public, anon, authenticated;
+revoke all on function sam_private.meme_mesure(public.station_mesures, public.station_mesures) from public, anon, authenticated;
+revoke all on function sam_private.fusion_autres(jsonb, jsonb) from public, anon, authenticated;
 
 -- Boutons « Synchroniser » de l'onglet Données (administrateurs SAM uniquement)
 create or replace function public.stations_synchroniser(p_station text default null)
