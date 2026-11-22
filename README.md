@@ -5,7 +5,7 @@ Application unique qui regroupe les six outils SAM et les données des stations 
 
 | Outil | Données | Accès (compte connecté) |
 |---|---|---|
-| Données (stations du réseau) | Supabase (collecte Comsag) + RIMpro | lecture ; fiche station et synchronisation : full admin |
+| Données (stations du réseau) | Supabase (collecte Comsag) + RIMpro | lecture ; « Fiche station » : full admin |
 | Cartographie (stations du réseau) | Supabase + fonds IGN Géoplateforme | lecture ; un clic ouvre les données de la station |
 | Indicateurs agroclimatiques | Open-Meteo | lecture |
 | Programmation irrigation | Open-Meteo | lecture |
@@ -37,6 +37,13 @@ les comptes : graphiques, encarts, résumé journalier et exports de l’onglet 
 la carte, et Bilan irrigation (qui garde alors la pluie d’Open-Meteo). Les mesures ne sont pas
 effacées : elles restent consultables dans Administration → Capteurs. Nécessite
 `supabase/capteurs_masques.sql`.
+
+**Fiche station** : la même fenêtre (`js/core/station-dialog.js`) s’ouvre depuis Administration →
+Stations (« Modifier », « + Nouvelle station ») et depuis Données (« Fiche station », full admin) :
+identité, position sur la carte, RIMpro, collecte, accès météo / irrigation compte par compte.
+
+**Collecte Comsag** : automatique toutes les 30 minutes (chaque station envoie une mesure par
+heure). Synchronisation manuelle : Administration → Stations → « Synchroniser toutes les stations ».
 
 **Données** : la pluviométrie n’est affichée que dans l’onglet Météo (graphique « Pluviométrie »,
 encart « Pluviométrie 24 h », colonne du résumé journalier) ; l’onglet Irrigation ne montre que les

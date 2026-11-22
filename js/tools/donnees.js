@@ -4,6 +4,7 @@
 import { presets } from '../core/period.js';
 import { icons } from '../core/icons.js';
 import { stationState } from '../core/stations.js';
+import { createStationDialog } from '../core/station-dialog.js';
 import { createZoomGroup, enableChartZoom, resetZoomGroup, timeAxis, timeTicksPlugin } from '../core/charts.js';
 import { todayISO, addDaysISO, formatNumber, formatDayMonth, formatDateShort, escapeHtml, storage } from '../core/util.js';
 
@@ -110,7 +111,6 @@ const TEMPLATE = `
       </div>
       <div class="don-head-actions">
         <span id="donStationState" class="don-state"></span>
-        <button class="don-btn don-admin hidden" type="button" id="donSyncOne">Synchroniser</button>
         <button class="don-btn don-admin hidden" type="button" id="donEditStation">Fiche station</button>
       </div>
     </header>
@@ -156,28 +156,6 @@ const TEMPLATE = `
     <div id="donRimpro"></div>
   </section>
 
-  <dialog class="sam-dialog don-dialog" id="donStationDialog" aria-labelledby="donDialogTitle">
-    <form class="don-form" id="donStationForm" method="dialog">
-      <div class="sam-dialog-head">
-        <div><p class="sam-kicker">Fiche station</p><h2 id="donDialogTitle">Station</h2></div>
-        <button class="sam-icon-button" type="button" id="donDialogClose" aria-label="Fermer"><span data-icon="close"></span></button>
-      </div>
-      <label class="sam-field">Nom affiché<input id="donFieldName" type="text" required maxlength="80"></label>
-      <label class="sam-field">Commune<input id="donFieldCommune" type="text" maxlength="80"></label>
-      <div class="don-form-row">
-        <label class="sam-field">Latitude<input id="donFieldLat" type="number" step="0.00001" min="-90" max="90" placeholder="43.6343"></label>
-        <label class="sam-field">Longitude<input id="donFieldLon" type="number" step="0.00001" min="-180" max="180" placeholder="4.1706"></label>
-        <label class="sam-field">Altitude (m)<input id="donFieldAlt" type="number" step="1"></label>
-      </div>
-      <label class="sam-field" id="donFieldRimproWrap">Identifiant RIMpro (station abonnée)<input id="donFieldRimpro" type="text" maxlength="20" placeholder="Ex. KFNYMs6" autocomplete="off" spellcheck="false"></label>
-      <label class="sam-field">Commentaire<textarea id="donFieldComment" rows="2" maxlength="400"></textarea></label>
-      <label class="don-check"><input id="donFieldActive" type="checkbox"> Collecte automatique active</label>
-      <label class="don-check"><input id="donFieldPublic" type="checkbox"> Visible par tous les comptes</label>
-      <label class="don-check"><input id="donFieldInstalled" type="checkbox"> Station installée sur le terrain</label>
-      <p class="sam-form-message" id="donFormMessage" role="status"></p>
-      <button class="sam-button sam-button-primary" type="submit">Enregistrer</button>
-    </form>
-  </dialog>
 </div>`;
 
 // ---------------------------------------------------------------------------
@@ -257,7 +235,7 @@ export async function mount(root, ctx) {
   </div>`;
   const modeButtons = [...slot.querySelectorAll('[data-mode]')];
 
-  const isAdmin = () => Boolean(ctx.isFullAdmin); // fiche station, RIMpro, synchronisation : full admin
+  const isAdmin = () => Boolean(ctx.isFullAdmin); // fiche station, RIMpro : full admin
   const sensorName = code => sensorLabels[code]?.libelle || BASE_SENSORS[code]?.[0] || code;
   const sensorUnit = code => sensorLabels[code]?.unite || BASE_SENSORS[code]?.[1] || '';
   const selected = () => store.selected;
@@ -823,80 +801,13 @@ export async function mount(root, ctx) {
   // -------------------------------------------------------------------------
   // Administration
   // -------------------------------------------------------------------------
-  async function synchronise() {
-    const station = selected();
-    if (!isAdmin() || !station) return;
-    const button = $('donSyncOne');
-    button.disabled = true;
-    try {
-      const { data: count, error } = await supabase.rpc('stations_synchroniser', { p_station: station.id });
-      if (error) throw error;
-      ctx.ui.toast(`Demande envoyée à Comsag (${count || 0} station${count > 1 ? 's' : ''})…`);
-      await new Promise(resolve => ctx.scope.timeout(resolve, 6000));
-      if (ctx.scope.disposed) return;
-      const { data: written, error: e2 } = await supabase.rpc('stations_integrer');
-      if (e2) throw e2;
-      ctx.ui.toast(`${written || 0} mesure${written > 1 ? 's' : ''} mise${written > 1 ? 's' : ''} à jour.`);
-      await refreshAll();
-    } catch (error) {
-      console.error(error);
-      ctx.ui.toast(`Synchronisation impossible : ${error.message || error}`, 6000);
-    } finally {
-      button.disabled = false;
-    }
-  }
-
+  // Fiche station : la même fenêtre que Administration → Stations → « Modifier » (full admin).
+  let stationDialog = null;
   function openEditor() {
     const station = selected();
     if (!station || !isAdmin()) return;
-    $('donDialogTitle').textContent = station.nom;
-    $('donFieldName').value = station.nom || '';
-    $('donFieldCommune').value = station.commune || '';
-    $('donFieldLat').value = station.latitude ?? '';
-    $('donFieldLon').value = station.longitude ?? '';
-    $('donFieldAlt').value = station.altitude ?? '';
-    $('donFieldRimpro').value = station.rimpro_id || '';
-    $('donFieldRimproWrap').classList.toggle('hidden', !('rimpro_id' in station));
-    $('donFieldComment').value = station.commentaire || '';
-    $('donFieldActive').checked = Boolean(station.active);
-    $('donFieldPublic').checked = Boolean(station.publique);
-    $('donFieldInstalled').checked = station.installee !== false;
-    $('donFormMessage').textContent = '';
-    $('donStationDialog').showModal();
-  }
-
-  async function saveStation(event) {
-    event.preventDefault();
-    const station = selected();
-    if (!station || !isAdmin()) return;
-    const numberOrNull = id => ($(id).value === '' ? null : Number($(id).value));
-    const payload = {
-      nom: $('donFieldName').value.trim() || station.nom,
-      commune: $('donFieldCommune').value.trim() || null,
-      latitude: numberOrNull('donFieldLat'),
-      longitude: numberOrNull('donFieldLon'),
-      altitude: numberOrNull('donFieldAlt'),
-      commentaire: $('donFieldComment').value.trim() || null,
-      active: $('donFieldActive').checked,
-      publique: $('donFieldPublic').checked,
-      installee: $('donFieldInstalled').checked,
-      updated_at: new Date().toISOString()
-    };
-    if ('rimpro_id' in station) payload.rimpro_id = $('donFieldRimpro').value.trim() || null;
-    if ((payload.latitude === null) !== (payload.longitude === null)) {
-      $('donFormMessage').textContent = 'Indiquez la latitude et la longitude, ou aucune des deux.';
-      return;
-    }
-    $('donFormMessage').textContent = 'Enregistrement…';
-    const { error } = await supabase.from('stations').update(payload).eq('id', station.id);
-    if (error) {
-      $('donFormMessage').textContent = `Enregistrement impossible : ${error.message}`;
-      return;
-    }
-    $('donStationDialog').close();
-    ctx.ui.toast('Fiche station enregistrée.');
-    store.patch(station.id, payload);
-    renderAll();
+    stationDialog ||= createStationDialog(ctx, { host: root, onSaved: () => refreshAll() });
+    stationDialog.open(station);
   }
 
   // -------------------------------------------------------------------------
@@ -967,10 +878,7 @@ export async function mount(root, ctx) {
     storage.set('indicateurs.tab', 'meteo');
     ctx.navigate('indicateurs');
   });
-  $('donSyncOne').addEventListener('click', synchronise);
   $('donEditStation').addEventListener('click', openEditor);
-  $('donStationForm').addEventListener('submit', saveStation);
-  $('donDialogClose').addEventListener('click', () => $('donStationDialog').close());
   ctx.stations.onChange(event => {
     if (event.type === 'select') {
       dailyExpanded = false;

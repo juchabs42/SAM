@@ -191,13 +191,6 @@
 .tool-donnees .don-rim-empty p { margin: 0; color: var(--sam-muted); }
 .tool-donnees .don-rim-empty .don-hint { margin-top: 10px; }
 
-/* Fiche station */
-.tool-donnees .don-dialog { width: min(560px, calc(100vw - 24px)); }
-.tool-donnees .don-form { display: grid; gap: 12px; padding: 22px; }
-.tool-donnees .don-form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.tool-donnees .don-form textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--sam-line); border-radius: 9px; font: inherit; resize: vertical; }
-.tool-donnees .don-check { display: flex; align-items: center; gap: 8px; font-size: .9rem; }
-
 @media (max-width: 1200px) {
   .tool-donnees .don-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* Nombre impair d'encarts (capteur masqué) : le dernier prend toute la largeur. */
@@ -223,7 +216,6 @@
   .don-mode-filter .don-seg button { flex: 1; }
   .tool-donnees .don-chart { height: 250px; }
   .tool-donnees .don-chart.is-short { height: 220px; }
-  .tool-donnees .don-form-row { grid-template-columns: 1fr 1fr; }
   .tool-donnees .don-rim-frame { height: 70vh; min-height: 420px; }
   /* Téléphone : liste déroulante des modèles plutôt que 14 boutons */
   .tool-donnees .don-rim-models { display: none; }

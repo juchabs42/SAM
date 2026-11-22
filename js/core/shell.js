@@ -10,7 +10,7 @@ import { profile } from './profile.js';
 import { stationStore, stationState } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-21.2';
+const APP_VERSION = '2026-11-22.1';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
@@ -548,7 +548,9 @@ function createContext(tool, root) {
       xlsx: () => loadScript(VENDOR.xlsx),
       leaflet: async () => { await loadCss(VENDOR.leafletCss); await loadScript(VENDOR.leaflet); }
     },
-    navigate: id => { window.location.hash = `#/${id}`; }
+    navigate: id => { window.location.hash = `#/${id}`; },
+    /** Feuille de style d'un autre outil (ex. 'admin' pour la fiche station ouverte depuis Données). */
+    loadToolCss: id => loadCss(`css/tools/${id}.css?v=${APP_VERSION}`)
   };
 
   return {

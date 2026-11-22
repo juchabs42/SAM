@@ -25,7 +25,7 @@ const TEMPLATE = `
   <section class="pro-card">
     <header class="pro-card-head">
       <h2>Mes informations</h2>
-      <p>Elles permettent à l’équipe SudExpé de savoir qui utilise SAM Outils. Seuls vous et les administrateurs SAM les voient.</p>
+      <p>Elles permettent à l’équipe SudExpé de savoir qui utilise SAM. Seuls vous et les administrateurs SAM les voient.</p>
     </header>
     <form class="pro-form" id="proForm" novalidate>
       <div class="pro-grid">
