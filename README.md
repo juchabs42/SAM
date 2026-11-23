@@ -173,6 +173,7 @@ supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bi
 supabase/emails/      modèles des mails d'invitation et de mot de passe (en français)
 _headers              en-têtes de sécurité, politique CSP, durée de cache (Cloudflare)
 .assetsignore         fichiers du dépôt non publiés (SQL, tests, README)
+wrangler.jsonc        réglage Cloudflare : Worker « sam », dossier publié, page 404
 service-worker.js     fonctionnement hors connexion
 ```
 
