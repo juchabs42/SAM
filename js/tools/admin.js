@@ -401,6 +401,7 @@ export async function mount(root, ctx) {
   // Fiche utilisateur : informations renseignées, connexion, rôle, accès
   // ---------------------------------------------------------------------------
   let ficheId = null;
+  const accountLabel = a => [a.prenom, a.nom].filter(Boolean).join(' ') || a.email;
   const nomStation = id => store.list.find(s => s.id === id)?.nom || id;
   const lienTel = t => `tel:${String(t).replace(/[^\d+]/g, '')}`;
   const quand = v => (v ? `${fmtDateTime(v)} · ${ago(v)}` : 'jamais');
