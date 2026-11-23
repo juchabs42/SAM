@@ -1,0 +1,10 @@
+// Publication Cloudflare (Workers, ressources statiques) : le site est le dossier du dépôt,
+// moins les fichiers listés dans .assetsignore. Une adresse inconnue affiche 404.html.
+{
+  "name": "sam",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": ".",
+    "not_found_handling": "404-page"
+  }
+}
