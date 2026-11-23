@@ -6,8 +6,7 @@
 // authentification (téléphone perdu).
 // Réservée aux « full admin » (sam_admins.niveau = 'full').
 //
-// Rôles : 'normal' (lecture, absent de sam_admins), 'conseiller' (lecture, stations suivies,
-// export, alertes gel multi-stations : table sam_conseillers), 'admin' (saisie Phénologie,
+// Rôles : 'normal' (lecture, absent de sam_admins), 'admin' (saisie Phénologie,
 // Tavelure, Piégeage), 'full' (tout : comptes, stations, capteurs).
 //
 // Déploiement (une seule fois) : Supabase > Edge Functions > Deploy a new function >
@@ -122,16 +121,13 @@ async function allUsers(admin: Admin) {
 }
 
 async function listAccounts(admin: Admin) {
-  const [users, admins, profiles, activites, conseillers] = await Promise.all([
+  const [users, admins, profiles, activites] = await Promise.all([
     allUsers(admin),
     admin.from('sam_admins').select('*'),
     admin.from('profils').select('*'),
     // Dernier renouvellement de session (supabase/activite_comptes.sql) : dernière utilisation réelle
-    admin.rpc('sam_dernieres_activites'),
-    // Conseillers (supabase/conseillers.sql)
-    admin.from('sam_conseillers').select('email')
+    admin.rpc('sam_dernieres_activites')
   ]);
-  const estConseiller = new Set((conseillers.error ? [] : conseillers.data ?? []).map((c: { email: string }) => c.email));
   if (admins.error) throw admins.error;
   const roles = new Map((admins.data ?? []).map((a: { email: string; niveau?: string }) => [a.email, a.niveau === 'admin' ? 'admin' : 'full']));
   // La table des profils peut ne pas encore exister : les comptes restent listés.
@@ -157,7 +153,7 @@ async function listAccounts(admin: Admin) {
       // Double authentification activée (code d'une application)
       mfa: (u.factors ?? []).some((f: { status?: string }) => f.status === 'verified'),
       banned: Boolean(u.banned_until && new Date(u.banned_until).getTime() > now),
-      role: roles.get(String(u.email ?? '').toLowerCase()) ?? (estConseiller.has(String(u.email ?? '').toLowerCase()) ? 'conseiller' : 'normal'),
+      role: roles.get(String(u.email ?? '').toLowerCase()) ?? 'normal',
       admin: roles.has(String(u.email ?? '').toLowerCase()),
       prenom: p.prenom ?? meta.prenom ?? null,
       nom: p.nom ?? meta.nom ?? null,
@@ -202,19 +198,9 @@ async function reinvite(admin: Admin, body: Admin) {
   return { ok: true };
 }
 
-type Role = 'normal' | 'conseiller' | 'admin' | 'full';
-const roleOf = (value: unknown) => (value === 'full' || value === 'admin' || value === 'conseiller' ? value : 'normal') as Role;
+const roleOf = (value: unknown) => (value === 'full' || value === 'admin' ? value : 'normal') as 'normal' | 'admin' | 'full';
 
-async function writeRole(admin: Admin, email: string, role: Role) {
-  // Conseiller : table sam_conseillers ; tout autre rôle l'en retire.
-  if (role === 'conseiller') {
-    const { error: e1 } = await admin.from('sam_admins').delete().eq('email', email);
-    if (e1) throw e1;
-    const { error } = await admin.from('sam_conseillers').upsert({ email });
-    if (error) throw error;
-    return;
-  }
-  await admin.from('sam_conseillers').delete().eq('email', email);
+async function writeRole(admin: Admin, email: string, role: 'normal' | 'admin' | 'full') {
   if (role === 'normal') {
     const { error } = await admin.from('sam_admins').delete().eq('email', email);
     if (error) throw error;
@@ -265,9 +251,6 @@ async function remove(admin: Admin, body: Admin, myId: string) {
   const { error } = await admin.auth.admin.deleteUser(body.id);
   if (error) throw error;
   const email = String(data?.user?.email ?? '').toLowerCase();
-  if (email) {
-    await admin.from('sam_admins').delete().eq('email', email);
-    await admin.from('sam_conseillers').delete().eq('email', email);
-  }
+  if (email) await admin.from('sam_admins').delete().eq('email', email);
   return { ok: true };
 }

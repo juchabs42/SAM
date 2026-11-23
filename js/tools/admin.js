@@ -157,8 +157,7 @@ const TEMPLATE = `
       <p class="adm-hint hidden" id="accFromRequest"></p>
       <label class="adm-field">Rôle
         <select id="accRole" class="adm-input">
-          <option value="normal">Normal : consultation (producteurs)</option>
-          <option value="conseiller">Conseiller : stations suivies, export, alertes multi-stations (techniciens, OP)</option>
+          <option value="normal">Normal : consultation (producteurs, techniciens)</option>
           <option value="admin">Admin : saisie Phénologie, Tavelure, Piégeage (collègues SudExpé)</option>
           <option value="full">Full admin : tout, y compris comptes et stations</option>
         </select>
@@ -329,8 +328,7 @@ export async function mount(root, ctx) {
 
   // Rôles : l'ancienne réponse de la fonction (champ « admin » seul) compte comme full admin.
   const ROLES = {
-    normal: { label: 'Normal', help: 'consultation seule (producteurs).' },
-    conseiller: { label: 'Conseiller', help: 'consultation, plus toutes les données des stations qu’il suit, l’export Excel et les alertes gel sur plusieurs stations (techniciens, conseillers d’OP).' },
+    normal: { label: 'Normal', help: 'consultation seule (producteurs, techniciens).' },
     admin: { label: 'Admin', help: 'saisie dans Phénologie, Tavelure et Piégeage, rien de plus.' },
     full: { label: 'Full admin', help: 'accès complet : comptes, stations, capteurs, fiches stations et saisie.' }
   };
@@ -351,7 +349,7 @@ export async function mount(root, ctx) {
       : list;
     const count = role => list.filter(a => roleOf(a) === role).length;
     const pending = list.filter(a => !a.confirmed).length;
-    $('accSummary').textContent = `${list.length} compte${list.length > 1 ? 's' : ''} · ${count('full')} full admin · ${count('admin')} admin · ${count('conseiller')} conseiller${count('conseiller') > 1 ? 's' : ''} · ${count('normal')} normal${pending ? ` · ${pending} invitation${pending > 1 ? 's' : ''} en attente` : ''}`;
+    $('accSummary').textContent = `${list.length} compte${list.length > 1 ? 's' : ''} · ${count('full')} full admin · ${count('admin')} admin · ${count('normal')} normal${pending ? ` · ${pending} invitation${pending > 1 ? 's' : ''} en attente` : ''}`;
     // Sans la mise à jour, Supabase ne donne que la dernière saisie du mot de passe
     const hint = $('accActiviteHint');
     hint.classList.toggle('hidden', state.activite === true);
@@ -508,8 +506,8 @@ export async function mount(root, ctx) {
       </section>
 
       <section class="adm-fiche-bloc">
-        <h3>${role === 'conseiller' ? 'Stations suivies' : 'Accès aux données réservées des stations'}</h3>
-        <div id="ficheStations">${role === 'normal' || role === 'conseiller' ? '<p class="adm-muted">Chargement…</p>' : '<p class="adm-muted">Les rôles admin et full admin voient toutes les données de toutes les stations.</p>'}</div>
+        <h3>Accès aux données réservées des stations</h3>
+        <div id="ficheStations">${role === 'normal' ? '<p class="adm-muted">Chargement…</p>' : '<p class="adm-muted">Les rôles admin et full admin voient toutes les données de toutes les stations.</p>'}</div>
       </section>
 
       <section class="adm-fiche-bloc">
@@ -529,55 +527,6 @@ export async function mount(root, ctx) {
       </section>`}
       <div class="adm-dialog-actions"><button type="button" class="adm-button" data-fiche-fermer>Fermer</button></div>`;
     if (role === 'normal') chargerAccesStations(a.id);
-    if (role === 'conseiller') chargerStationsSuivies(a.id);
-  }
-
-  // Conseiller : stations suivies = accès complets (météo et irrigation) dans station_acces
-  async function chargerStationsSuivies(id) {
-    const box = $('ficheStations');
-    try {
-      const [{ data, error }] = await Promise.all([
-        supabase.from('station_acces').select('station_id,meteo,irrigation').eq('user_id', id),
-        store.load()
-      ]);
-      if (error) throw error;
-      if (ficheId !== id || !box.isConnected) return;
-      const suivies = new Set((data || []).filter(g => g.meteo && g.irrigation).map(g => g.station_id));
-      const stations = store.list.filter(st => st.installee !== false || suivies.has(st.id))
-        .sort((x, y) => x.nom.localeCompare(y.nom, 'fr'));
-      box.innerHTML = `
-        <p class="adm-hint">Cochez les stations de ses producteurs : il en voit toutes les données (météo et irrigation), peut les exporter et y régler des alertes gel.</p>
-        <div class="adm-suivies">${stations.map(st => `<label class="adm-check"><input type="checkbox" value="${escapeHtml(st.id)}"${suivies.has(st.id) ? ' checked' : ''}><span>${escapeHtml(st.nom)}${st.commune ? ` <span class="adm-muted">${escapeHtml(st.commune)}</span>` : ''}</span></label>`).join('')}</div>
-        <div><button type="button" class="adm-button is-primary" id="ficheSuiviesSave">Enregistrer les stations suivies</button></div>`;
-      $('ficheSuiviesSave').addEventListener('click', async event => {
-        const button = event.currentTarget;
-        const choisies = new Set([...box.querySelectorAll('.adm-suivies input:checked')].map(i => i.value));
-        const ajouts = [...choisies].filter(sid => !suivies.has(sid));
-        const retraits = [...suivies].filter(sid => !choisies.has(sid));
-        button.disabled = true;
-        try {
-          if (ajouts.length) {
-            const { error: e1 } = await supabase.from('station_acces').upsert(
-              ajouts.map(sid => ({ station_id: sid, user_id: id, meteo: true, irrigation: true, updated_at: new Date().toISOString() })),
-              { onConflict: 'station_id,user_id' });
-            if (e1) throw e1;
-          }
-          if (retraits.length) {
-            const { error: e2 } = await supabase.from('station_acces').delete().eq('user_id', id).in('station_id', retraits);
-            if (e2) throw e2;
-          }
-          ajouts.forEach(sid => suivies.add(sid));
-          retraits.forEach(sid => suivies.delete(sid));
-          ctx.ui.toast(`${choisies.size} station${choisies.size > 1 ? 's' : ''} suivie${choisies.size > 1 ? 's' : ''}.`);
-        } catch (error) {
-          ctx.ui.toast(`Enregistrement impossible : ${error.message}`, 6000);
-        } finally {
-          if (button.isConnected) button.disabled = false;
-        }
-      });
-    } catch {
-      if (ficheId === id && box.isConnected) box.innerHTML = '<p class="adm-muted">Accès par station pas encore configurés (supabase/acces_stations.sql).</p>';
-    }
   }
 
   // Stations dont les données réservées (météo, irrigation) sont ouvertes à ce compte

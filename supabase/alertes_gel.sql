@@ -2,11 +2,10 @@
 -- SAM — alertes gel (notification sur le téléphone et mail)
 -- -----------------------------------------------------------------------------
 -- À coller dans Supabase > SQL Editor > New query, puis Run (relançable).
--- À exécuter après conseillers.sql. Exécuté le 23/11/2026.
+-- À exécuter après double_authentification.sql. Exécuté le 23/11/2026.
 --
 -- Chaque compte règle ses alertes dans Mon profil > Alertes gel : station, seuil (°C),
 -- alerte du soir (prévision de la nuit) et/ou alerte sur mesure, mail et/ou notification.
--- Un producteur suit une station ; conseillers, admins et full admins, plusieurs.
 --   - Mesure : vérifiée 1 minute après chaque intégration Comsag (toutes les 5 minutes) ;
 --     l'alerte part dès qu'une mesure reçue est sous le seuil, une fois par 12 heures au plus.
 --   - Prévision : chaque soir à 17 h UTC (18 h en hiver), minimum prévu jusqu'au lendemain 10 h.
@@ -53,24 +52,9 @@ create policy alertes_gel_retrait on public.alertes_gel
 revoke all on public.alertes_gel from anon;
 grant select, insert, update, delete on public.alertes_gel to authenticated;
 
--- Un producteur (rôle normal) suit une station ; plusieurs pour les autres rôles.
-create or replace function sam_private.alertes_gel_limite()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  if public.sam_role() = 'normal'
-     and exists (select 1 from public.alertes_gel g where g.user_id = new.user_id and g.station_id <> new.station_id) then
-    raise exception 'Un compte producteur suit le gel d''une station. Pour plusieurs stations, demandez le rôle Conseiller.';
-  end if;
-  return new;
-end;
-$$;
+-- (Limite d'une station par producteur retirée le 23/11/2026 : chacun suit autant de stations qu'il veut.)
 drop trigger if exists alertes_gel_limite on public.alertes_gel;
-create trigger alertes_gel_limite before insert on public.alertes_gel
-  for each row execute function sam_private.alertes_gel_limite();
+drop function if exists sam_private.alertes_gel_limite();
 
 -- 2. Appareils abonnés aux notifications (un par navigateur ou téléphone)
 create table if not exists public.notifications_push (

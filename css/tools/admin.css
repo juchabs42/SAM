@@ -401,8 +401,3 @@
   .tool-admin .adm-nudge { flex-wrap: wrap; }
   .tool-admin .adm-tabs button .adm-tab-badge { min-width: 18px; height: 18px; padding: 0 5px; }
 }
-
-/* Rôle Conseiller et stations suivies */
-.tool-admin .adm-badge.is-conseiller { border-color: #1f6f8b; background: #eef7fa; color: #1f5a70; }
-.tool-admin .adm-suivies { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 16px; margin: 10px 0 12px; }
-.tool-admin .adm-suivies .adm-muted { display: inline; margin-left: 4px; }

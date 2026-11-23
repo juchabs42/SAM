@@ -111,7 +111,7 @@ const TEMPLATE = `
       </div>
       <div class="don-head-actions">
         <span id="donStationState" class="don-state"></span>
-        <button class="don-btn don-export hidden" type="button" id="donExport" title="Toutes les mesures horaires et le résumé journalier de la période, dans un fichier Excel">Exporter (Excel)</button>
+        <button class="don-btn don-export" type="button" id="donExport" title="Toutes les mesures horaires et le résumé journalier de la période, dans un fichier Excel">Exporter (Excel)</button>
         <button class="don-btn don-admin hidden" type="button" id="donEditStation">Fiche station</button>
       </div>
     </header>
@@ -249,8 +249,6 @@ export async function mount(root, ctx) {
 
   function renderAdmin() {
     root.querySelectorAll('.don-admin').forEach(el => el.classList.toggle('hidden', !isAdmin()));
-    // Export Excel : conseillers, admins et full admins
-    $('donExport').classList.toggle('hidden', !['conseiller', 'admin', 'full'].includes(ctx.role));
   }
 
   // -------------------------------------------------------------------------

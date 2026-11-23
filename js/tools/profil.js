@@ -100,9 +100,7 @@ export async function mount(root, ctx) {
       ? 'Full admin — accès complet (comptes, stations, saisie)'
       : ctx.isAdmin
         ? 'Admin — saisie Phénologie, Tavelure, Piégeage'
-        : ctx.role === 'conseiller'
-          ? 'Conseiller — stations suivies, export Excel, alertes gel multi-stations'
-          : 'Normal — consultation (lecture seule)';
+        : 'Normal — consultation (lecture seule)';
     $('proRole').classList.toggle('is-admin', Boolean(ctx.isAdmin));
   }
 
@@ -340,9 +338,8 @@ export async function mount(root, ctx) {
   function renderGel(message = '', isError = false) {
     const { alertes, stations } = gelState;
     const nom = id => stations.find(st => st.id === id)?.nom || ctx.stations.store.list.find(st => st.id === id)?.nom || id;
-    const plusieurs = ['conseiller', 'admin', 'full'].includes(ctx.role);
     const libres = stations.filter(st => !alertes.some(a => a.station_id === st.id));
-    const peutAjouter = libres.length && (plusieurs || !alertes.length);
+    const peutAjouter = libres.length > 0;
     const note = message ? `<p class="sam-form-message${isError ? ' is-error' : ''}" role="status">${escapeHtml(message)}</p>` : '';
     const appareil = !pushPossible()
       ? `<p class="pro-muted">${iphoneSansAppli() ? 'Sur iPhone, les notifications demandent d’installer SAM : bouton Partager de Safari, « Sur l’écran d’accueil », puis ouvrez SAM depuis son icône et revenez ici.' : 'Ce navigateur ne reçoit pas les notifications : les alertes arriveront par mail.'}</p>`
@@ -366,8 +363,7 @@ export async function mount(root, ctx) {
         <label class="sam-field">Station<select id="proGelStation">${libres.map(st => `<option value="${escapeHtml(st.id)}">${escapeHtml(st.nom)}</option>`).join('')}</select></label>
         <label class="sam-field">Seuil (°C)<input id="proGelSeuil" type="number" step="0.5" min="-15" max="10" value="0" inputmode="decimal"></label>
         <button class="sam-button sam-button-primary" type="submit">Ajouter l’alerte</button>
-      </form>` : !stations.length ? '<p class="pro-muted">Aucune station avec température ne vous est ouverte.</p>'
-        : !plusieurs && alertes.length ? '<p class="pro-muted">Un compte producteur suit le gel d’une station. Pour plusieurs stations, demandez le rôle Conseiller à SudExpé.</p>' : ''}
+      </form>` : !stations.length ? '<p class="pro-muted">Aucune station avec température ne vous est ouverte.</p>' : ''}
       <div class="pro-gel-appareil">
         ${appareil}
         <div class="pro-actions">

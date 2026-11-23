@@ -56,19 +56,12 @@ refuse les droits admin et full admin (`supabase/double_authentification.sql`, m
 dans `schema.sql` et `roles.sql`). Téléphone perdu : Administration → Comptes → Fiche utilisateur
 → « Retirer la double authentification » (ou Supabase → Authentication → Users → le compte).
 
-**Rôle Conseiller** (techniciens, conseillers d'OP) : compte de consultation qui voit toutes les
-données des stations qu'il suit (cochées dans sa fiche utilisateur, enregistrées comme accès
-complets dans `station_acces`), exporte les mesures en Excel (bouton « Exporter » de Données) et
-règle des alertes gel sur plusieurs stations. `supabase/conseillers.sql` (table `sam_conseillers`,
-`sam_role()`), fonction `sam-admin`.
-
 **Alertes gel** (Mon profil → Alertes gel) : par station, un seuil ; alerte du soir (prévision
 Open-Meteo de la nuit, tâche `sam-alertes-prevision` à 17 h UTC) et alerte sur mesure (vérifiée
 1 minute après chaque intégration Comsag, tâche `sam-alertes-mesures`, une fois par 12 h au plus).
 Envoi par la fonction Supabase `sam-alertes` : notification (Web Push, clés créées et gardées dans
 `sam_private.reglages`) et mail via Brevo (secret `BREVO_CLE` de la fonction ; adresse d'envoi
-`mail_expediteur` dans `sam_private.reglages`, à valider dans Brevo). Un producteur suit une station,
-les autres rôles plusieurs. `supabase/alertes_gel.sql`.
+`mail_expediteur` dans `sam_private.reglages`, à valider dans Brevo). `supabase/alertes_gel.sql`.
 
 **Pages légales** : `legal/mentions-legales.html`, `legal/confidentialite.html`,
 `legal/conditions.html` (pages statiques, lisibles sans connexion), liées depuis la page de
@@ -182,7 +175,6 @@ supabase/doublons_mesures.sql  fusion des mesures Comsag reçues en double (exé
 supabase/double_authentification.sql  code à 6 chiffres exigé pour les droits admin des comptes qui l'activent
 supabase/demandes_acces.sql  formulaire « Demander un accès » (table + fonction publique contrôlée)
 supabase/maintenance.sql  purge du journal cron (14 jours), chemins de recherche des fonctions
-supabase/conseillers.sql  rôle Conseiller (sam_conseillers, sam_role)
 supabase/alertes_gel.sql  alertes gel : tables, règles, listes pour la fonction, tâches automatiques
 supabase/functions/sam-alertes/index.ts  envoi des alertes gel (notifications, mails Brevo)
 supabase/activite_comptes.sql  dernière activité réelle des comptes (sessions qui se prolongent seules)

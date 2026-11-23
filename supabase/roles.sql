@@ -61,7 +61,6 @@ $$;
 
 -- Rôle du compte connecté : 'full', 'admin' ou 'normal' (lu par le site).
 -- Sans le code de double authentification (compte qui l'a activée) : 'normal'.
--- Après ce fichier, relancer conseillers.sql : il redéfinit sam_role() avec le rôle « conseiller ».
 create or replace function public.sam_role()
 returns text
 language sql

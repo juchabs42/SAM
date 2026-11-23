@@ -72,7 +72,6 @@ revoke all on function public.is_sam_full_admin() from public, anon;
 grant execute on function public.is_sam_full_admin() to authenticated;
 
 -- Rôle lu par le site : 'normal' tant que le code n'est pas saisi.
--- Après ce fichier, relancer conseillers.sql : il redéfinit sam_role() avec le rôle « conseiller ».
 create or replace function public.sam_role()
 returns text
 language sql
