@@ -128,7 +128,7 @@ img { max-width: 100%; }
 }
 .sam-side-empty { margin: 6px 6px 0; font-size: .86rem; opacity: .85; }
 .sam-side-hint { margin: 10px 6px 0; font-size: .8rem; line-height: 1.45; opacity: .8; }
-.sam-side-subtitle { margin: 14px 8px 4px; font-size: .74rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .7; }
+.sam-side-subtitle { margin: 14px 8px 4px; font-size: .74rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .92; }
 
 .sam-stations { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
 .sam-stations:empty { display: none; }
@@ -556,7 +556,21 @@ button.sam-top-item:hover, a.sam-top-item:hover { background: rgba(255,255,255,.
   color: var(--sam-ink);
   font-size: .97rem;
 }
-.sam-field input:focus, .sam-input:focus { outline: none; border-color: var(--sam-red-700); box-shadow: 0 0 0 3px rgba(197,1,26,.1); }
+.sam-field select, .sam-field textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #d5d9df;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--sam-ink);
+  font-size: .97rem;
+}
+.sam-field textarea { min-height: 84px; padding: 10px 12px; resize: vertical; line-height: 1.45; }
+.sam-field input:focus, .sam-input:focus, .sam-field select:focus, .sam-field textarea:focus { outline: none; border-color: var(--sam-red-700); box-shadow: 0 0 0 3px rgba(197,1,26,.1); }
+.sam-check { display: flex; align-items: flex-start; gap: 10px; color: var(--sam-ink-2); font-size: .84rem; line-height: 1.45; }
+.sam-check input { flex: none; width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--sam-red-700); }
+.sam-check a { color: var(--sam-red-700); }
 .sam-button {
   display: inline-flex;
   align-items: center;
@@ -646,7 +660,58 @@ body.is-gated { background: var(--sam-red-900); }
   font-weight: 600;
 }
 .sam-gate-link:hover { text-decoration: underline; }
-.sam-gate-foot { margin: 0; color: rgba(255,255,255,.82); font-size: .82rem; }
+.sam-gate-foot { display: grid; justify-items: center; gap: 6px; color: rgba(255,255,255,.9); font-size: .82rem; text-align: center; }
+.sam-gate-foot p { margin: 0; }
+.sam-gate-foot nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; }
+.sam-gate-foot a { color: #fff; text-underline-offset: 2px; }
+.sam-gate-request { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--sam-line); text-align: center; }
+.sam-gate-request p { margin: 0 0 8px; color: var(--sam-muted); font-size: .88rem; }
+.sam-gate-request-button { width: 100%; min-height: 46px; border-color: var(--sam-red-700); color: var(--sam-red-700); }
+.sam-gate-request-button:hover { background: #fff5f6; border-color: var(--sam-red-800); }
+.sam-gate-card:has(#sam-gate-request-view:not([hidden])) { width: min(520px, 100%); }
+.sam-gate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.sam-gate-form .sam-field select { min-height: 46px; font-size: 1rem; }
+.sam-gate-trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.sam-gate-note { margin: 14px 0 0; color: var(--sam-muted); font-size: .82rem; line-height: 1.45; text-align: center; }
+.sam-gate-note a { color: var(--sam-red-700); }
+.sam-gate-done { padding: 14px 16px; border-radius: 12px; background: #eef8f1; color: #1d5b34; font-size: .92rem; line-height: 1.5; }
+.sam-gate-done strong { display: block; margin-bottom: 4px; font-size: 1rem; }
+#sam-gate-mfa-code { letter-spacing: .3em; font-size: 1.25rem; text-align: center; }
+
+/* Pied de page de l'application : aide, pages légales, sources des données */
+.sam-footer {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 18px 38px calc(22px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--sam-line);
+  color: var(--sam-muted);
+  font-size: .8rem;
+  line-height: 1.5;
+}
+.sam-app:not(.has-sidebar) .sam-footer, .sam-app.has-sidebar.is-collapsed .sam-footer { max-width: 1720px; }
+.sam-footer a { color: var(--sam-ink-2); text-underline-offset: 2px; }
+.sam-footer a:hover { color: var(--sam-red-700); }
+.sam-footer-links { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-bottom: 6px; font-weight: 600; }
+.sam-footer-sources { margin: 0; }
+
+/* Pastille de l'onglet Administration : points à traiter (stations muettes, demandes d'accès) */
+.sam-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ffd54a;
+  color: #3d2c00;
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.sam-nav-badge[hidden] { display: none; }
 
 /* Bloc « suivi assuré par l'équipe SudExpé » (phénologie, tavelure) */
 .sam-team-note {
@@ -820,6 +885,7 @@ body.is-gated { background: var(--sam-red-900); }
   .sam-app.has-sidebar .sam-burger { display: inline-flex; }
   .sam-app.has-sidebar.is-collapsed .sam-expand, .sam-collapse { display: none; }
   .sam-content { padding: 22px 22px 48px; }
+  .sam-footer { padding-inline: 22px; }
 }
 
 @media (max-width: 760px) {
@@ -837,7 +903,9 @@ body.is-gated { background: var(--sam-red-900); }
   /* Onglet Données sur téléphone : le logo est dans le tiroir des stations. */
   .sam-app.has-sidebar .sam-top-brand { display: none; }
   .sam-gate-card { padding: 24px 20px 18px; }
+  .sam-gate-grid { grid-template-columns: 1fr; }
   .sam-content { padding: 16px 14px 40px; }
+  .sam-footer { padding: 16px 14px calc(20px + env(safe-area-inset-bottom)); }
   .sam-page-head { margin-bottom: 14px; }
   .sam-tools {
     display: flex;

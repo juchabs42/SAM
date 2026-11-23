@@ -2594,11 +2594,12 @@ function ensureTrapMap() {
   const ign = L.tileLayer("https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}", {
     maxZoom: 19, attribution: "© IGN – Géoplateforme"
   });
-  const esri = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-    maxZoom: 19, attribution: "Imagery © Esri, Maxar, Earthstar Geographics"
+  // Plan IGN (même service que les photos aériennes : pas de fournisseur supplémentaire)
+  const plan = L.tileLayer("https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}", {
+    maxZoom: 19, attribution: "© IGN – Géoplateforme"
   });
   ign.addTo(trapMap);
-  L.control.layers({ "Satellite IGN (France)": ign, "Satellite Esri (monde)": esri }, null, { collapsed: true }).addTo(trapMap);
+  L.control.layers({ "Photos aériennes IGN": ign, "Plan IGN": plan }, null, { collapsed: true }).addTo(trapMap);
   trapMapLayer = L.layerGroup().addTo(trapMap);
   trapMap.on("click", event => placeSelectedTrap(event.latlng.lat, event.latlng.lng));
   return true;

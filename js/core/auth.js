@@ -152,14 +152,54 @@ export async function updatePassword(password) {
   auth.linkType = null;
 }
 
+// ---------------------------------------------------------------------------
+// Double authentification (code à 6 chiffres d'une application : Google Authenticator…)
+// ---------------------------------------------------------------------------
+/** Vrai si le compte connecté a activé la double authentification sans avoir encore saisi son code. */
+export async function mfaRequired() {
+  if (!auth.client?.auth?.mfa || !auth.user) return false;
+  try {
+    // Jeton passé en paramètre : la liste des codes activés est relue sur le serveur
+    // (une session ouverte avant l'activation sur un autre appareil ne la connaît pas).
+    const { data: current } = await auth.client.auth.getSession();
+    const { data, error } = await auth.client.auth.mfa.getAuthenticatorAssuranceLevel(current?.session?.access_token);
+    if (error) return false;
+    return data?.nextLevel === 'aal2' && data?.currentLevel !== 'aal2';
+  } catch {
+    return false;
+  }
+}
+
+/** Vérifie le code de l'application ; la session passe au niveau « aal2 » et les droits sont relus. */
+export async function verifyMfa(code) {
+  const { data: factors, error } = await auth.client.auth.mfa.listFactors();
+  if (error) throw error;
+  const factor = (factors?.totp || []).find(f => f.status === 'verified');
+  if (!factor) throw new Error('Aucune double authentification n’est active sur ce compte.');
+  const { error: verifyError } = await auth.client.auth.mfa.challengeAndVerify({ factorId: factor.id, code });
+  if (verifyError) throw verifyError;
+  const { data } = await auth.client.auth.getSession();
+  await applySession(data?.session || null);
+}
+
+/** Demande d'accès déposée depuis la page de connexion (sans compte). */
+export async function requestAccess(fields) {
+  if (!auth.client) throw new Error('Connexion indisponible : Supabase n’est pas configuré.');
+  const { error } = await auth.client.rpc('sam_demander_acces', { p: fields });
+  if (error) throw error;
+}
+
 /** Message lisible pour les erreurs de connexion Supabase. */
 export function authErrorMessage(error) {
   const text = error?.message || String(error || '');
+  if (/invalid totp|invalid.*code|mfa_verification_failed|code.*(invalid|expired)/i.test(text)) return 'Code incorrect ou expiré : saisissez le code affiché en ce moment par l’application.';
+  if (/insufficient_aal|aal2/i.test(text)) return 'Saisissez d’abord votre code de double authentification.';
   if (/invalid login|invalid credentials/i.test(text)) return 'Adresse mail ou mot de passe incorrect.';
   if (/email not confirmed/i.test(text)) return 'Ce compte n’est pas encore confirmé : contactez SudExpé.';
   if (/rate limit|too many/i.test(text)) return 'Trop de tentatives : réessayez dans quelques minutes.';
   if (/should be different|same.*password/i.test(text)) return 'Choisissez un mot de passe différent de l’ancien.';
   if (/password.*(at least|characters|weak|short)/i.test(text)) return 'Mot de passe trop court ou trop simple (8 caractères au moins).';
   if (/failed to fetch|network/i.test(text)) return 'Pas de connexion internet.';
+  if (/trop de demandes|adresse mail invalide|champ trop long|message trop long/i.test(text)) return text.replace(/^.*?(Trop|Adresse|Champ|Message)/, '$1');
   return text;
 }

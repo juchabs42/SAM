@@ -1,7 +1,7 @@
 // SAM Administration — réservé aux administrateurs SAM.
-// Trois volets : comptes (fonction Supabase « sam-admin »), stations (table stations,
-// collecte Comsag), capteurs (mesures brutes de chaque station, dictionnaire des capteurs).
-import { stationState } from '../core/stations.js';
+// Trois volets : comptes (fonction Supabase « sam-admin », demandes d'accès), stations (table
+// stations, collecte Comsag), capteurs (mesures brutes de chaque station, dictionnaire des capteurs).
+import { stationState, stationToWatch } from '../core/stations.js';
 import { escapeHtml, formatNumber, fetchAllRows, storage } from '../core/util.js';
 import { icons } from '../core/icons.js';
 import { createZoomGroup, enableChartZoom, resetZoomGroup, timeAxis, timeTicksPlugin } from '../core/charts.js';
@@ -40,12 +40,29 @@ const TEMPLATE = `
     <span>La gestion des comptes, des stations et des capteurs n’est pas ouverte à votre rôle.</span>
   </div>
   <div id="admContent" class="hidden">
+    <div class="adm-nudge hidden" id="admMfaNudge" role="note">
+      <span class="adm-nudge-icon" aria-hidden="true">${icons.lock}</span>
+      <p><strong>Protégez l’administration :</strong> activez la double authentification dans <a href="#/profil">Mon profil</a>. Un mot de passe volé ne suffira plus pour modifier les comptes et les stations.</p>
+      <button type="button" class="adm-button is-small" id="admMfaLater">Plus tard</button>
+    </div>
     <div class="adm-tabs" role="tablist" aria-label="Administration">
-      ${TABS.map(t => `<button type="button" role="tab" data-tab="${t.id}">${t.icon}<span>${t.label}</span></button>`).join('')}
+      ${TABS.map(t => `<button type="button" role="tab" data-tab="${t.id}">${t.icon}<span>${t.label}</span><span class="adm-tab-badge" data-tab-badge="${t.id}" hidden></span></button>`).join('')}
     </div>
 
     <!-- Comptes ------------------------------------------------------------ -->
     <section class="adm-panel" data-panel="comptes" role="tabpanel">
+      <div class="adm-card hidden" id="reqCard">
+        <div class="adm-bar">
+          <div>
+            <h2>Demandes d’accès</h2>
+            <p class="adm-sub" id="reqSummary"></p>
+          </div>
+          <div class="adm-actions">
+            <label class="adm-check"><input type="checkbox" id="reqShowAll"><span>Voir aussi les demandes traitées</span></label>
+          </div>
+        </div>
+        <div id="reqList" class="adm-list"></div>
+      </div>
       <div class="adm-card">
         <div class="adm-bar">
           <div>
@@ -137,6 +154,7 @@ const TEMPLATE = `
         <label class="adm-field">Fonction<input id="accFonction" class="adm-input" autocomplete="off"></label>
       </div>
       <label class="adm-field">Téléphone<input id="accTelephone" class="adm-input" autocomplete="off" inputmode="tel"></label>
+      <p class="adm-hint hidden" id="accFromRequest"></p>
       <label class="adm-field">Rôle
         <select id="accRole" class="adm-input">
           <option value="normal">Normal : consultation (producteurs, techniciens)</option>
@@ -186,8 +204,14 @@ export async function mount(root, ctx) {
     sensorRows: [],
     sensorCharts: [],
     capStation: null,
-    capSensors: null
+    capSensors: null,
+    // Demandes d'accès (formulaire de la page de connexion) ; null = table absente
+    requests: [],
+    // Demande d'accès à l'origine de l'invitation en cours
+    inviteRequest: null
   };
+  // Pastille de l'onglet Administration (barre du haut) à recalculer
+  const signalAttention = () => window.dispatchEvent(new CustomEvent('sam:attention'));
   const capZoom = createZoomGroup();
 
   // ---------------------------------------------------------------------------
@@ -209,6 +233,7 @@ export async function mount(root, ctx) {
     });
     root.querySelectorAll('.adm-panel').forEach(p => { p.hidden = p.dataset.panel !== id; });
     if (id === 'comptes' && !state.accounts && !state.accountsError) loadAccounts();
+    if (id === 'comptes') loadRequests();
     if (id === 'stations') loadStations();
     if (id === 'capteurs') loadSensorsTab();
   }
@@ -270,6 +295,7 @@ export async function mount(root, ctx) {
       state.accountsError = null;
       state.activite = data.activite_disponible;
       renderAccounts();
+      if (state.requests) renderRequests();
       if ($('accFiche').open) renderFiche();
     } catch (error) {
       state.accounts = null;
@@ -349,7 +375,7 @@ export async function mount(root, ctx) {
           return `<tr data-id="${escapeHtml(a.id)}">
             <td data-label="Personne"><div><button type="button" class="adm-lien" data-fiche="${escapeHtml(a.id)}">${escapeHtml(name || a.email)}</button>${name ? `<span class="adm-muted">${escapeHtml(a.email)}</span>` : ''}${self ? '<span class="adm-tag">vous</span>' : ''}</div></td>
             <td data-label="Structure"><div>${escapeHtml(a.structure || '—')}${a.fonction ? `<span class="adm-muted">${escapeHtml(a.fonction)}</span>` : ''}</div></td>
-            <td data-label="Rôle"><div><span class="adm-badge is-${role}" title="${escapeHtml(ROLES[role].help)}">${ROLES[role].label}</span></div></td>
+            <td data-label="Rôle"><div><span class="adm-badge is-${role}" title="${escapeHtml(ROLES[role].help)}">${ROLES[role].label}</span>${a.mfa ? `<span class="adm-mfa" title="Double authentification activée">${icons.lock}<span class="sr-only">Double authentification activée</span></span>` : ''}</div></td>
             <td data-label="Statut"><div><span class="adm-status is-${status.key}">${status.label}</span>${!a.confirmed && a.invited_at ? `<span class="adm-muted">le ${escapeHtml(fmtDateTime(a.invited_at))}</span>` : ''}</div></td>
             <td data-label="Dernière activité"><div>${derniere ? `${escapeHtml(fmtDateTime(derniere))}<span class="adm-muted">${ago(derniere)}</span>` : 'jamais'}</div></td>
             <td class="adm-cell-actions"><button type="button" class="adm-button is-small" data-fiche="${escapeHtml(a.id)}">Fiche utilisateur</button></td>
@@ -380,6 +406,10 @@ export async function mount(root, ctx) {
         if (off && !await confirmAction('Suspendre l’accès', `${who} ne pourra plus se connecter tant que l’accès n’est pas réactivé. Son compte et ses données sont conservés.`, 'Suspendre')) return;
         await callAdmin('suspend', { id: a.id, suspended: off });
         ctx.ui.toast(off ? `Accès de ${who} suspendu.` : `Accès de ${who} réactivé.`);
+      } else if (act === 'resetMfa') {
+        if (!await confirmAction('Retirer la double authentification', `${who} pourra se connecter avec son seul mot de passe, puis réactiver la double authentification dans « Mon profil » (téléphone perdu ou changé).`, 'Retirer')) return;
+        await callAdmin('resetMfa', { id: a.id });
+        ctx.ui.toast(`Double authentification retirée du compte de ${who}.`);
       } else if (act === 'delete') {
         if (!await confirmAction('Supprimer le compte', `Le compte de ${who} (${a.email}) sera supprimé définitivement, avec ses parcelles du Bilan irrigation. Cette action est irréversible.`, 'Supprimer définitivement')) return;
         await callAdmin('delete', { id: a.id });
@@ -387,6 +417,7 @@ export async function mount(root, ctx) {
       }
       await loadAccounts();
       if ($('accFiche').open) renderFiche();
+      if (state.requests) renderRequests();
     } catch (error) {
       ctx.ui.toast(`Action impossible : ${error.message}`, 6000);
     }
@@ -461,9 +492,10 @@ export async function mount(root, ctx) {
           ${a.confirmed ? ligne('Compte activé', 'oui') : ligne('Invitation envoyée', a.invited_at ? `${escapeHtml(fmtDateTime(a.invited_at))}, pas encore acceptée` : 'pas encore acceptée')}
           ${activite ? ligne('Dernière activité', escapeHtml(quand(a.derniere_activite))) : ''}
           ${ligne('Dernière saisie du mot de passe', escapeHtml(quand(a.last_sign_in_at)))}
+          ${'mfa' in a ? ligne('Double authentification', a.mfa ? 'activée (code d’une application à chaque connexion)' : 'non activée') : ''}
         </dl>
         <p class="adm-hint">${activite
-          ? 'Dernière activité : dernière utilisation de SAM Outils, à une heure près. Le mot de passe n’est demandé qu’à l’ouverture d’une nouvelle session ; une session ouverte se prolonge seule.'
+          ? 'Dernière activité : dernière utilisation de SAM, à une heure près. Le mot de passe n’est demandé qu’à l’ouverture d’une nouvelle session ; une session ouverte se prolonge seule.'
           : 'Le mot de passe n’est demandé qu’à l’ouverture d’une nouvelle session ; une session ouverte se prolonge seule, sans changer cette date. La dernière utilisation réelle s’affichera une fois la mise à jour installée (voir la liste des comptes).'}</p>
       </section>
 
@@ -483,6 +515,7 @@ export async function mount(root, ctx) {
         <div class="adm-fiche-actions">
           ${a.confirmed ? '<button type="button" class="adm-button" data-fiche-act="reset">Envoyer un lien de mot de passe</button>' : '<button type="button" class="adm-button" data-fiche-act="reinvite">Renvoyer l’invitation</button>'}
           ${self ? '' : a.banned ? '<button type="button" class="adm-button" data-fiche-act="unsuspend">Réactiver l’accès</button>' : '<button type="button" class="adm-button" data-fiche-act="suspend">Suspendre l’accès</button>'}
+          ${a.mfa && !self ? '<button type="button" class="adm-button" data-fiche-act="resetMfa">Retirer la double authentification</button>' : ''}
         </div>
         ${self ? '' : `<p class="adm-hint">${a.banned ? 'Accès suspendu : la personne ne peut plus se connecter. Son compte et ses données sont conservés.' : 'Suspendre : la personne ne peut plus se connecter ; son compte et ses données sont conservés.'}</p>`}
       </section>
@@ -536,16 +569,29 @@ export async function mount(root, ctx) {
   });
   $('accSearch').addEventListener('input', () => renderAccounts());
 
-  $('accInviteBtn').addEventListener('click', () => {
+  function openInvite(request = null) {
     if (state.accountsError?.missing) {
       ctx.ui.toast('Installez d’abord la fonction « sam-admin » (voir les étapes ci-dessous).', 5000);
       return;
     }
     $('accForm').reset();
     $('accMessage').textContent = '';
+    state.inviteRequest = request?.id || null;
+    if (request) {
+      $('accEmail').value = request.email || '';
+      $('accPrenom').value = request.prenom || '';
+      $('accNom').value = request.nom || '';
+      $('accStructure').value = request.structure || '';
+      $('accFonction').value = request.profil || '';
+      $('accTelephone').value = request.telephone || '';
+      $('accRole').value = 'normal';
+    }
+    $('accFromRequest').classList.toggle('hidden', !request);
+    $('accFromRequest').textContent = request ? `Demande d’accès du ${fmtDateTime(request.cree_le)} : elle sera marquée « traitée » une fois l’invitation envoyée.` : '';
     $('accDialog').showModal();
     $('accEmail').focus();
-  });
+  }
+  $('accInviteBtn').addEventListener('click', () => openInvite());
 
   $('accForm').addEventListener('submit', async event => {
     event.preventDefault();
@@ -570,12 +616,128 @@ export async function mount(root, ctx) {
       });
       $('accDialog').close();
       ctx.ui.toast(`Invitation envoyée à ${email}.`);
+      if (state.inviteRequest) await setRequestStatus(state.inviteRequest, 'traitee', { quiet: true });
+      state.inviteRequest = null;
       await loadAccounts();
     } catch (error) {
       $('accMessage').textContent = error.message;
     } finally {
       $('accSubmit').disabled = false;
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Demandes d'accès (formulaire « Demander un accès » de la page de connexion)
+  // ---------------------------------------------------------------------------
+  const REQUEST_STATUS = { nouvelle: 'Nouvelle', traitee: 'Traitée', archivee: 'Archivée' };
+
+  async function loadRequests() {
+    const { data, error } = await supabase.from('demandes_acces').select('*').order('cree_le', { ascending: false }).limit(200);
+    if (ctx.scope.disposed) return;
+    // Table absente (demandes_acces.sql pas exécuté) : le bloc reste caché.
+    state.requests = error ? null : data || [];
+    renderRequests();
+    updateTabBadges();
+  }
+
+  function renderRequests() {
+    const card = $('reqCard');
+    const all = state.requests;
+    if (!all) { card.classList.add('hidden'); return; }
+    const fresh = all.filter(r => r.statut === 'nouvelle');
+    const showAll = $('reqShowAll').checked;
+    const shown = showAll ? all : fresh;
+    // Sans demande en attente, le bloc ne s'affiche que si l'on demande l'historique.
+    card.classList.toggle('hidden', !fresh.length && !showAll && !all.length);
+    $('reqSummary').textContent = fresh.length
+      ? `${fresh.length} demande${fresh.length > 1 ? 's' : ''} en attente · formulaire « Demander un accès » de la page de connexion`
+      : 'Aucune demande en attente · formulaire « Demander un accès » de la page de connexion';
+    if (!shown.length) {
+      $('reqList').innerHTML = `<p class="adm-empty">${showAll ? 'Aucune demande reçue.' : 'Aucune demande en attente.'}</p>`;
+      return;
+    }
+    const known = new Set((state.accounts || []).map(a => a.email.toLowerCase()));
+    $('reqList').innerHTML = `
+      <table class="adm-table adm-requests">
+        <thead><tr><th>Reçue le</th><th>Personne</th><th>Structure</th><th>Message</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>${shown.map(r => {
+          const name = [r.prenom, r.nom].filter(Boolean).join(' ') || r.email;
+          const exists = known.has(String(r.email || '').toLowerCase());
+          const actions = r.statut === 'nouvelle'
+            ? `${exists ? '<span class="adm-badge is-warn">Compte existant</span><button type="button" class="adm-button is-small" data-req="traitee">Marquer traitée</button>' : '<button type="button" class="adm-button is-small is-primary" data-req="inviter">Inviter</button>'}
+               <button type="button" class="adm-button is-small" data-req="archivee">Archiver</button>`
+            : `<span class="adm-status is-${r.statut === 'traitee' ? 'active' : 'idle'}">${REQUEST_STATUS[r.statut] || r.statut}</span>${r.traitee_le ? `<span class="adm-muted">le ${escapeHtml(fmtDateTime(r.traitee_le))}</span>` : ''}
+               <button type="button" class="adm-button is-small" data-req="nouvelle">Remettre en attente</button>`;
+          return `<tr data-req-id="${escapeHtml(r.id)}">
+            <td data-label="Reçue le"><div>${escapeHtml(fmtDateTime(r.cree_le))}<span class="adm-muted">${ago(r.cree_le)}</span></div></td>
+            <td data-label="Personne"><div><strong>${escapeHtml(name)}</strong><a class="adm-muted" href="mailto:${escapeHtml(r.email)}">${escapeHtml(r.email)}</a>${r.telephone ? `<a class="adm-muted" href="tel:${escapeHtml(String(r.telephone).replace(/[^\d+]/g, ''))}">${escapeHtml(r.telephone)}</a>` : ''}</div></td>
+            <td data-label="Structure"><div>${escapeHtml(r.structure || '—')}<span class="adm-muted">${escapeHtml([r.profil, r.commune].filter(Boolean).join(' · '))}</span></div></td>
+            <td data-label="Message"><div class="adm-req-message">${r.message ? escapeHtml(r.message) : '<span class="adm-muted">—</span>'}</div></td>
+            <td class="adm-cell-actions">${actions}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+  }
+
+  async function setRequestStatus(id, statut, { quiet = false } = {}) {
+    const patch = { statut, traitee_le: statut === 'nouvelle' ? null : new Date().toISOString() };
+    const { data, error } = await supabase.from('demandes_acces').update(patch).eq('id', id).select('id');
+    if (error || !data?.length) {
+      ctx.ui.toast(error ? `Enregistrement impossible : ${error.message}` : 'Enregistrement refusé : réservé aux full admins.', 6000);
+      return false;
+    }
+    const r = (state.requests || []).find(x => x.id === id);
+    if (r) Object.assign(r, patch);
+    if (!quiet) ctx.ui.toast(statut === 'archivee' ? 'Demande archivée.' : statut === 'traitee' ? 'Demande marquée comme traitée.' : 'Demande remise en attente.');
+    renderRequests();
+    updateTabBadges();
+    signalAttention();
+    return true;
+  }
+
+  $('reqShowAll').addEventListener('change', renderRequests);
+  $('reqList').addEventListener('click', async event => {
+    const button = event.target.closest('button[data-req]');
+    if (!button) return;
+    const id = button.closest('tr').dataset.reqId;
+    const request = (state.requests || []).find(r => r.id === id);
+    if (!request) return;
+    if (button.dataset.req === 'inviter') {
+      openInvite(request);
+      return;
+    }
+    button.disabled = true;
+    await setRequestStatus(id, button.dataset.req);
+    if (button.isConnected) button.disabled = false;
+  });
+
+  // Pastilles des onglets : demandes en attente (Comptes), stations à surveiller (Stations)
+  function updateTabBadges() {
+    const counts = {
+      comptes: (state.requests || []).filter(r => r.statut === 'nouvelle').length,
+      stations: store.loaded && !store.error ? store.list.filter(stationToWatch).length : 0
+    };
+    root.querySelectorAll('[data-tab-badge]').forEach(badge => {
+      const n = counts[badge.dataset.tabBadge] || 0;
+      badge.hidden = !n;
+      badge.textContent = String(n);
+      badge.title = badge.dataset.tabBadge === 'comptes' ? `${n} demande${n > 1 ? 's' : ''} d’accès en attente` : `${n} station${n > 1 ? 's' : ''} à surveiller`;
+    });
+  }
+
+  // Rappel aux full admins sans double authentification (masquable 30 jours)
+  async function checkMfaNudge() {
+    const later = Number(storage.get('admin.mfaLater', 0)) || 0;
+    if (Date.now() - later < 30 * 24 * HOUR) return;
+    try {
+      const { data, error } = await supabase.auth.mfa.listFactors();
+      if (error || ctx.scope.disposed) return;
+      $('admMfaNudge').classList.toggle('hidden', (data?.totp || []).some(f => f.status === 'verified'));
+    } catch { /* fonction indisponible : pas de rappel */ }
+  }
+  $('admMfaLater').addEventListener('click', () => {
+    storage.set('admin.mfaLater', Date.now());
+    $('admMfaNudge').classList.add('hidden');
   });
 
   // ---------------------------------------------------------------------------
@@ -629,10 +791,8 @@ export async function mount(root, ctx) {
     $('staSummary').textContent = `${list.length} station${list.length > 1 ? 's' : ''} · ${parts.join(' · ')}`;
 
     // À surveiller : stations posées dont la transmission pose problème
-    const watch = list.filter(s => {
-      const k = stationState(s).key;
-      return s.installee !== false && s.active !== false && (['late', 'silent', 'never'].includes(k) || s.derniere_erreur);
-    });
+    const watch = list.filter(stationToWatch);
+    updateTabBadges();
     $('staAlerts').innerHTML = watch.length
       ? `<div class="adm-alert"><strong>À surveiller (${watch.length})</strong><ul>${watch.map(s => {
           const st = stationState(s);
@@ -1010,6 +1170,12 @@ export async function mount(root, ctx) {
   root.querySelectorAll('.adm-tabs [data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   ctx.onAuthChange(() => { if (applyAccess() && !root.querySelector('.adm-tabs .is-active')) showTab(state.tab); });
   ctx.scope.add(destroySensorCharts);
-  if (applyAccess()) showTab(state.tab);
+  if (applyAccess()) {
+    showTab(state.tab);
+    checkMfaNudge();
+    // Pastilles des onglets dès l'ouverture, quel que soit l'onglet affiché
+    if (state.tab !== 'comptes') loadRequests();
+    if (state.tab !== 'stations') store.load().then(() => { if (!ctx.scope.disposed) updateTabBadges(); }).catch(() => {});
+  }
   return {};
 }

@@ -39,12 +39,12 @@ const TEMPLATE = `<div class="tool-main">
       <button id="newParcelBtn" class="sam-filter-action hidden" type="button"><span class="sam-filter-action-plus" aria-hidden="true">+</span>Nouvelle parcelle</button>
     </section>
 
-    <nav class="tabs" aria-label="Navigation principale">
-      <button id="dashboardTabBtn" class="tab-button" type="button" aria-selected="false">Suivi actuel</button>
-      <button id="historyTabBtn" class="tab-button active" type="button" aria-selected="true">Historique &amp; courbes</button>
-    </nav>
+    <div class="tabs" role="tablist" aria-label="Vues du suivi phénologique">
+      <button id="dashboardTabBtn" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="dashboardView">Suivi actuel</button>
+      <button id="historyTabBtn" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="historyView">Historique &amp; courbes</button>
+    </div>
 
-    <div id="dashboardView" class="view hidden">
+    <div id="dashboardView" class="view hidden" role="tabpanel" aria-labelledby="dashboardTabBtn">
       <section id="configPanel" class="card hidden" aria-labelledby="config-title">
         <div class="section-heading">
           <div>
@@ -178,7 +178,7 @@ const TEMPLATE = `<div class="tool-main">
       </section>
     </div>
 
-    <div id="historyView" class="view">
+    <div id="historyView" class="view" role="tabpanel" aria-labelledby="historyTabBtn">
       <section class="card" aria-labelledby="stage-history-title">
         <div class="section-heading">
           <div>

@@ -1,8 +1,8 @@
-// SAM Outils — service worker.
+// SAM — service worker.
 // Fichiers du site : réseau d'abord (toujours la dernière version en ligne),
 // copie locale en secours hors connexion. Les API (Open-Meteo, Supabase…) ne sont
 // pas interceptées : chaque outil gère ses propres données hors connexion.
-const CACHE = 'sam-outils-v28';
+const CACHE = 'sam-outils-v29';
 const CORE = [
   './',
   './index.html',
@@ -23,8 +23,8 @@ const CORE = [
   './assets/vendor/supabase-2.118.0.js',
   './assets/vendor/chart-4.4.7.umd.js',
   './assets/fonts/inter-latin-wght-normal.woff2',
-  './assets/img/logo-sam-blanc.png',
-  './assets/img/logo-sam-rouge.png',
+  './assets/img/logo-sam-blanc.webp',
+  './assets/img/logo-sam-rouge.webp',
   './assets/img/icon-192.png',
   './manifest.webmanifest'
 ];

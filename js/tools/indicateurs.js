@@ -173,7 +173,8 @@ function comparisonPeriod(start, end) {
 }
 
 function vpdLegend(modifier = '') {
-  return `<div class="vpd-legend-inline ${modifier}" aria-label="Légende des bandes de DPV">
+  // Défilante sur téléphone : atteignable au clavier (tabindex) pour la faire défiler.
+  return `<div class="vpd-legend-inline ${modifier}" role="group" tabindex="0" aria-label="Légende des bandes de DPV">
     <span class="vpd-legend-item"><span class="vpd-swatch swatch-blue"></span>0–0,8 kPa · Faible demande</span>
     <span class="vpd-legend-item"><span class="vpd-swatch swatch-green"></span>0,8–1,6 kPa · Conditions favorables</span>
     <span class="vpd-legend-item"><span class="vpd-swatch swatch-yellow"></span>1,6–2,5 kPa · Régulation stomatique</span>

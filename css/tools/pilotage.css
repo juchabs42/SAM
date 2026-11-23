@@ -181,3 +181,8 @@
   .tool-pilotage .pil-plan li { flex-direction: column; gap: 2px; }
   .tool-pilotage .pil-bascule { margin-left: 0; }
 }
+
+/* Modèle Excel d'import des irrigations */
+.tool-pilotage .pil-modele { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0 0; }
+.tool-pilotage .pil-modele .sam-button { min-height: 38px; font-size: .88rem; }
+.tool-pilotage .pil-modele .pil-muted { flex: 1 1 220px; font-size: .82rem; line-height: 1.4; }

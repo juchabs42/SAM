@@ -260,7 +260,7 @@ export async function mount(root, ctx) {
     byId('stageTableBody').innerHTML = STAGE_DEFINITIONS.map(stage => {
       const date = stageDates.get(stage.id) || '';
       const dateCell = currentUser
-        ? `<input class="stage-date-input" type="date" data-stage-id="${stage.id}" value="${date}">`
+        ? `<input class="stage-date-input" type="date" data-stage-id="${stage.id}" value="${date}" aria-label="Date observée du stade ${stage.id}">`
         : `<span class="empty-date">${date ? formatDate(date) : ''}</span>`;
       return `<tr>
         <td data-label="Stade"><strong>Stade ${stage.id}</strong></td>

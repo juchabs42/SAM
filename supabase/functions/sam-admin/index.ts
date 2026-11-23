@@ -1,8 +1,9 @@
 // =============================================================================
-// SAM Outils · Fonction Supabase « sam-admin » : gestion des comptes
+// SAM · Fonction Supabase « sam-admin » : gestion des comptes
 // -----------------------------------------------------------------------------
 // Utilisée par l'onglet « Administration » du site (administrateurs SAM uniquement) :
-// liste des comptes, invitation, rôles, suspension, suppression.
+// liste des comptes, invitation, rôles, suspension, suppression, retrait de la double
+// authentification (téléphone perdu).
 // Réservée aux « full admin » (sam_admins.niveau = 'full').
 //
 // Rôles : 'normal' (lecture, absent de sam_admins), 'admin' (saisie Phénologie,
@@ -50,6 +51,16 @@ function adminKey(): string {
   throw new Refus('Clé d\'administration Supabase introuvable pour la fonction.', 500);
 }
 
+// Niveau d'authentification inscrit dans le jeton de connexion : 'aal1' (mot de passe) ou 'aal2' (code saisi).
+function niveauJeton(jwt: string): string | null {
+  try {
+    const part = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(part + '='.repeat((4 - (part.length % 4)) % 4))).aal ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const text = (value: unknown, max = 160) =>
   typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
 
@@ -66,6 +77,9 @@ Deno.serve(async (req: Request) => {
     const { data: who, error: whoError } = await admin.auth.getUser(jwt);
     const me = who?.user;
     if (whoError || !me?.email || !me.email_confirmed_at) throw new Refus('Connexion requise.', 401);
+    // Double authentification activée sur ce compte : le code doit avoir été saisi (jeton « aal2 »).
+    const doubleAuth = (me.factors ?? []).some((f: { status?: string }) => f.status === 'verified');
+    if (doubleAuth && niveauJeton(jwt) !== 'aal2') throw new Refus('Saisissez d\'abord votre code de double authentification.', 403);
     const myEmail = me.email.toLowerCase();
     const { data: mine, error: adminError } = await admin.from('sam_admins').select('*').eq('email', myEmail).maybeSingle();
     if (adminError) throw adminError;
@@ -82,6 +96,7 @@ Deno.serve(async (req: Request) => {
       case 'setAdmin': return reply(await setRole(admin, { ...body, role: body.admin === true ? 'admin' : 'normal' }, myEmail));
       case 'suspend': return reply(await suspend(admin, body, me.id));
       case 'delete': return reply(await remove(admin, body, me.id));
+      case 'resetMfa': return reply(await resetMfa(admin, body, me.id));
       default: throw new Refus('Action inconnue.');
     }
   } catch (error) {
@@ -133,8 +148,10 @@ async function listAccounts(admin: Admin) {
       invited_at: u.invited_at ?? null,
       last_sign_in_at: u.last_sign_in_at ?? null,
       // Dernière utilisation : dernière connexion ou dernier renouvellement de session
-      derniere_activite: plusRecent(u.last_sign_in_at, activite.get(u.id)),
+      derniere_activite: plusRecent(u.last_sign_in_at, activite.get(u.id) as string | undefined),
       confirmed: Boolean(u.email_confirmed_at),
+      // Double authentification activée (code d'une application)
+      mfa: (u.factors ?? []).some((f: { status?: string }) => f.status === 'verified'),
       banned: Boolean(u.banned_until && new Date(u.banned_until).getTime() > now),
       role: roles.get(String(u.email ?? '').toLowerCase()) ?? 'normal',
       admin: roles.has(String(u.email ?? '').toLowerCase()),
@@ -211,6 +228,20 @@ async function suspend(admin: Admin, body: Admin, myId: string) {
   const { error } = await admin.auth.admin.updateUserById(body.id, { ban_duration: body.suspended ? '876000h' : 'none' });
   if (error) throw error;
   return { ok: true };
+}
+
+// Téléphone perdu : retire la double authentification du compte ; la personne la réactive
+// ensuite dans « Mon profil ». Pas pour son propre compte (à faire dans « Mon profil »).
+async function resetMfa(admin: Admin, body: Admin, myId: string) {
+  if (!body.id) throw new Refus('Compte manquant.');
+  if (body.id === myId) throw new Refus('Pour votre propre compte, passez par « Mon profil ».');
+  const { data, error } = await admin.auth.admin.mfa.listFactors({ userId: body.id });
+  if (error) throw error;
+  for (const factor of data?.factors ?? []) {
+    const { error: e } = await admin.auth.admin.mfa.deleteFactor({ userId: body.id, id: factor.id });
+    if (e) throw e;
+  }
+  return { ok: true, removed: (data?.factors ?? []).length };
 }
 
 async function remove(admin: Admin, body: Admin, myId: string) {

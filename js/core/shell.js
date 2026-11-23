@@ -7,10 +7,10 @@ import { auth, signOut } from './auth.js';
 import { places, searchPlaces, locateMe, placeLabel } from './places.js';
 import { period } from './period.js';
 import { profile } from './profile.js';
-import { stationStore, stationState } from './stations.js';
+import { stationStore, stationState, stationToWatch } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-23.1';
+const APP_VERSION = '2026-11-23.2';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
@@ -21,16 +21,17 @@ export const TOOLS = [
   { id: 'tavelure', title: 'SAM Tavelure', card: 'Tavelure', icon: 'toolTavelure', admin: true },
   { id: 'piegeage', title: 'SAM Piégeage', card: 'Piégeage', icon: 'toolPiegeage', admin: true }
 ];
-const HIDDEN_TOOLS = [
-  { id: 'migration', title: 'Migration des données Piégeage', hidden: true, adminOnly: true }
-];
 // Rubriques hors « Outils SAM » : pas de cartes d'outils.
 const SECTIONS = [
   { id: 'donnees', title: 'Données des stations SAM', section: true, sidebar: 'stations' },
   { id: 'carte', title: 'Cartographie des stations SAM', section: true },
   { id: 'admin', title: 'Administration SAM', section: true, adminOnly: true },
-  { id: 'profil', title: 'Mon profil', section: true }
+  { id: 'profil', title: 'Mon profil', section: true },
+  { id: 'aide', title: 'Aide', section: true }
 ];
+/** Page d'accueil de l'application (logo, ouverture, adresse inconnue). */
+const HOME = 'donnees';
+/** Premier outil de « Outils SAM » quand aucun n'a encore été ouvert. */
 const DEFAULT_TOOL = 'indicateurs';
 
 const $ = id => document.getElementById(id);
@@ -263,6 +264,44 @@ function renderAuth() {
   $('sam-app').classList.toggle('is-admin', Boolean(auth.isFullAdmin));
   updateToolModePill();
   if (activeTool && !activeTool.section) renderToolCards(activeTool.id);
+  refreshAttention();
+}
+
+// ---------------------------------------------------------------------------
+// Points à traiter (full admin) : stations qui ne transmettent plus, demandes d'accès.
+// Pastille sur l'onglet Administration ; l'administration la redemande après chaque action.
+// ---------------------------------------------------------------------------
+let attentionAt = 0;
+async function refreshAttention(force = false) {
+  const badge = $('sam-nav-admin-badge');
+  if (!auth.isFullAdmin || !auth.client) {
+    badge.hidden = true;
+    return;
+  }
+  if (!force && Date.now() - attentionAt < 60000) return;
+  attentionAt = Date.now();
+  // Lecture directe (quelques lignes) : la liste partagée des stations n'est pas rechargée.
+  const [stations, requests] = await Promise.all([
+    auth.client.from('stations').select('id,installee,active,derniere_mesure,derniere_erreur')
+      .then(({ data, error }) => (error ? 0 : (data || []).filter(stationToWatch).length)).catch(() => 0),
+    auth.client.from('demandes_acces').select('id', { count: 'exact', head: true }).eq('statut', 'nouvelle')
+      .then(({ count, error }) => (error ? 0 : count || 0)).catch(() => 0)
+  ]);
+  if (!auth.isFullAdmin) return;
+  const total = stations + requests;
+  const details = [
+    stations ? `${stations} station${stations > 1 ? 's' : ''} à surveiller` : '',
+    requests ? `${requests} demande${requests > 1 ? 's' : ''} d’accès` : ''
+  ].filter(Boolean).join(' · ');
+  badge.hidden = !total;
+  // Le nombre est visible ; le détail est lu par les lecteurs d'écran (et en info-bulle).
+  badge.textContent = String(total);
+  const detail = document.createElement('span');
+  detail.className = 'sr-only';
+  detail.textContent = ` à traiter : ${details}`;
+  if (total) badge.append(detail);
+  badge.title = details;
+  $('sam-nav-admin').title = `Administration : comptes, stations, capteurs${details ? ` — ${details}` : ''}`;
 }
 
 async function handleLogout() {
@@ -395,6 +434,7 @@ function renderLocationPopover(pop) {
     </div>
     <div class="sam-pop-section">
       <button type="button" class="sam-button" id="sam-pop-gps"><span data-icon="gps"></span>Utiliser ma position</button>
+      <p class="sam-pop-note">Nom de la commune : Nominatim, © les contributeurs d’OpenStreetMap.</p>
     </div>`;
   const input = pop.querySelector('#sam-pop-search-input');
   wirePlaceSearch(input, pop.querySelector('#sam-pop-search-results'), { onSelect: () => closePopovers() });
@@ -573,7 +613,7 @@ function destroyDetachedCharts() {
 
 function routeFromHash() {
   const id = (window.location.hash || '').replace(/^#\/?/, '').split(/[/?]/)[0];
-  return TOOLS.find(t => t.id === id && toolVisible(t)) || SECTIONS.find(t => t.id === id) || HIDDEN_TOOLS.find(t => t.id === id) || null;
+  return TOOLS.find(t => t.id === id && toolVisible(t)) || SECTIONS.find(t => t.id === id) || null;
 }
 
 /** Outil qui remplace un outil masqué (ancien lien ou dernier outil mémorisé), s'il est visible. */
@@ -588,8 +628,6 @@ function replacementOf(id) {
 function applyLayout(tool) {
   const withSidebar = tool.sidebar === 'stations';
   $('sam-app').classList.toggle('has-sidebar', withSidebar);
-  const last = storage.get('lastTool', DEFAULT_TOOL);
-  $('sam-top-brand').href = `#/${TOOLS.some(t => t.id === last && toolVisible(t)) ? last : DEFAULT_TOOL}`;
   if (!withSidebar) closeDrawer();
   else enterStationSidebar().catch(error => console.warn(error));
 }
@@ -613,7 +651,7 @@ async function mountTool(tool) {
   destroyDetachedCharts();
 
   activeTool = tool;
-  document.title = `${tool.title} — SAM Outils`;
+  document.title = `${tool.title.replace(/^SAM /, '').replace(/ SAM$/, '')} — SAM`;
   $('sam-title').textContent = tool.title;
   $('sam-tools').classList.toggle('hidden', Boolean(tool.section));
   if (!tool.section) renderToolCards(tool.id);
@@ -655,7 +693,8 @@ function updateTopNav(tool) {
   const outils = $('sam-nav-outils');
   const donnees = $('sam-nav-donnees');
   const carte = $('sam-nav-carte');
-  outils.href = `#/${storage.get('lastTool', DEFAULT_TOOL)}`;
+  const last = storage.get('lastTool', DEFAULT_TOOL);
+  outils.href = `#/${TOOLS.some(t => t.id === last && toolVisible(t)) ? last : replacementOf(last) || DEFAULT_TOOL}`;
   outils.classList.toggle('is-active', inTools);
   donnees.classList.toggle('is-active', inData);
   carte.classList.toggle('is-active', inMap);
@@ -671,11 +710,9 @@ function updateTopNav(tool) {
 function handleRoute() {
   const tool = routeFromHash();
   if (!tool) {
-    // Outil inconnu ou réservé (aperçu) : retour au dernier outil accessible.
-    const last = storage.get('lastTool', DEFAULT_TOOL);
+    // Adresse vide, outil inconnu ou retiré : ancien lien redirigé, sinon l'accueil (Données).
     const asked = (window.location.hash || '').replace(/^#\/?/, '').split(/[/?]/)[0];
-    const ok = TOOLS.some(t => t.id === last && toolVisible(t));
-    window.location.replace(`#/${replacementOf(asked) || (ok ? last : replacementOf(last) || DEFAULT_TOOL)}`);
+    window.location.replace(`#/${replacementOf(asked) || HOME}`);
     return;
   }
   if (TOOLS.includes(tool)) storage.set('lastTool', tool.id);
@@ -698,15 +735,15 @@ function detectPlatform() {
 }
 
 function installSteps(platform) {
-  const intro = '<p>Une fois installée, SAM Outils apparaît avec vos autres applications et s’ouvre en plein écran, sans barre d’adresse. Elle se met à jour toute seule.</p>';
-  const oldShortcut = '<p>Si vous aviez déjà ajouté un simple raccourci SAM Outils sur l’écran d’accueil, supprimez-le d’abord.</p>';
+  const intro = '<p>Une fois installée, SAM apparaît avec vos autres applications et s’ouvre en plein écran, sans barre d’adresse. Elle se met à jour toute seule.</p>';
+  const oldShortcut = '<p>Si vous aviez déjà ajouté un simple raccourci SAM sur l’écran d’accueil, supprimez-le d’abord.</p>';
   switch (platform.id) {
     case 'ios':
       return `${intro}<p class="sam-install-platform">iPhone / iPad</p>
         <ol>${platform.safari ? '' : '<li>Ouvrez cette page dans <strong>Safari</strong> (copiez l’adresse si besoin).</li>'}
           <li>Touchez le bouton <strong>Partager</strong> (carré avec une flèche vers le haut), en bas de l’écran.</li>
           <li>Faites défiler et choisissez <strong>« Sur l’écran d’accueil »</strong>.</li>
-          <li>Touchez <strong>« Ajouter »</strong> : l’icône SAM Outils apparaît sur l’écran d’accueil.</li></ol>
+          <li>Touchez <strong>« Ajouter »</strong> : l’icône SAM apparaît sur l’écran d’accueil.</li></ol>
         <p>Sur iPhone, c’est la seule façon d’installer une application web : elle s’ouvre ensuite comme une vraie appli.</p>${oldShortcut}`;
     case 'samsung':
       return `${intro}<p class="sam-install-platform">Samsung Internet</p>
@@ -721,14 +758,14 @@ function installSteps(platform) {
       return `${intro}<p class="sam-install-platform">Android (Chrome)</p>
         <ol><li>Ouvrez le menu <kbd>⋮</kbd> en haut à droite de Chrome.</li>
           <li>Touchez <strong>« Installer l’application »</strong>. Si vous voyez plutôt « Ajouter à l’écran d’accueil », touchez-le puis choisissez <strong>« Installer »</strong>, et non « Créer un raccourci ».</li>
-          <li>Validez : SAM Outils rejoint la liste de vos applications.</li></ol>${oldShortcut}`;
+          <li>Validez : SAM rejoint la liste de vos applications.</li></ol>${oldShortcut}`;
     default:
       if (platform.firefox || platform.safari) {
         return `${intro}<p class="sam-install-platform">Ordinateur</p><p>Ce navigateur n’installe pas les applications web. Ouvrez la page dans <strong>Chrome</strong> ou <strong>Edge</strong>, ou installez-la depuis votre téléphone.</p>`;
       }
       return `${intro}<p class="sam-install-platform">Ordinateur (Chrome, Edge)</p>
         <ol><li>Cliquez sur l’icône <strong>Installer</strong> (écran avec une flèche) à droite de la barre d’adresse,</li>
-          <li>ou cherchez <strong>« Installer SAM Outils »</strong> dans le menu <kbd>⋮</kbd> du navigateur.</li></ol>`;
+          <li>ou cherchez <strong>« Installer SAM »</strong> dans le menu <kbd>⋮</kbd> du navigateur.</li></ol>`;
   }
 }
 
@@ -777,7 +814,7 @@ function initPwa() {
   window.addEventListener('appinstalled', () => {
     deferredInstall = null;
     refresh();
-    toast('SAM Outils est installée sur cet appareil.');
+    toast('SAM est installée sur cet appareil.');
   });
   standaloneQuery.addEventListener?.('change', refresh);
 
@@ -831,6 +868,9 @@ export function startShell() {
   // Compte
   renderAuth();
   auth.onChange(() => renderAuth());
+  // Points à traiter (full admin) : redemandés par l'administration, et toutes les 10 minutes.
+  window.addEventListener('sam:attention', () => refreshAttention(true));
+  setInterval(() => { if (document.visibilityState === 'visible') refreshAttention(true); }, 10 * 60 * 1000);
   profile.load().then(renderAuth).catch(() => {});
   $('sam-logout').addEventListener('click', handleLogout);
 

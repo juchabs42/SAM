@@ -3,25 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="SAM Outils — indicateurs agroclimatiques, irrigation, bilan hydrique, phénologie, tavelure, piégeage et stations du réseau SAM. Sud Agro Météo, SudExpé.">
+  <meta name="description" content="SAM — Sud Agro Météo, un service de SudExpé : mesures des stations du réseau, prévisions, indicateurs agroclimatiques, irrigation, phénologie, tavelure et piégeage.">
   <meta name="theme-color" content="#A20117">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="SAM Outils">
-  <title>SAM Outils</title>
+  <meta name="apple-mobile-web-app-title" content="SAM">
+  <title>SAM — Sud Agro Météo</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="64x64" href="assets/img/favicon-64.png">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="css/app.css?v=2026-11-23.1">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-23.2">
 </head>
 <body>
   <!-- Écran de connexion : l'application n'est accessible qu'aux comptes SAM -->
   <div class="sam-gate" id="sam-gate" hidden>
     <main class="sam-gate-card">
-      <img class="sam-gate-logo" src="assets/img/logo-sam-rouge.png" alt="SAM — Sud Agro Météo" width="176" height="104">
+      <img class="sam-gate-logo" src="assets/img/logo-sam-rouge.webp" alt="SAM — Sud Agro Météo" width="176" height="104">
 
       <section class="sam-gate-view" id="sam-gate-login-view">
         <h1>Connexion</h1>
@@ -33,6 +33,10 @@
           <button class="sam-button sam-button-primary sam-gate-submit" type="submit" id="sam-gate-login-submit">Se connecter</button>
         </form>
         <button class="sam-gate-link" type="button" id="sam-gate-forgot">Mot de passe oublié ?</button>
+        <div class="sam-gate-request">
+          <p>Pas encore de compte ?</p>
+          <button class="sam-button sam-gate-request-button" type="button" id="sam-gate-request">Demander un accès</button>
+        </div>
       </section>
 
       <section class="sam-gate-view" id="sam-gate-reset-view" hidden>
@@ -46,6 +50,52 @@
         <button class="sam-gate-link" type="button" id="sam-gate-back">Retour à la connexion</button>
       </section>
 
+      <section class="sam-gate-view" id="sam-gate-mfa-view" hidden>
+        <h1>Code de vérification</h1>
+        <p class="sam-gate-text">La double authentification est activée sur ce compte : saisissez le code à 6 chiffres affiché par votre application (Google Authenticator, Microsoft Authenticator…).</p>
+        <form class="sam-gate-form" id="sam-gate-mfa" novalidate>
+          <label class="sam-field">Code à 6 chiffres<input id="sam-gate-mfa-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="8" required></label>
+          <p class="sam-form-message" id="sam-gate-mfa-message" role="status"></p>
+          <button class="sam-button sam-button-primary sam-gate-submit" type="submit" id="sam-gate-mfa-submit">Valider</button>
+        </form>
+        <p class="sam-gate-note">Téléphone perdu ou changé ? Écrivez à <a href="mailto:jchabat@sudexpe.net">jchabat@sudexpe.net</a> : un administrateur retire la double authentification de votre compte.</p>
+        <button class="sam-gate-link" type="button" id="sam-gate-mfa-cancel">Se connecter avec un autre compte</button>
+      </section>
+
+      <section class="sam-gate-view" id="sam-gate-request-view" hidden>
+        <h1>Demander un accès</h1>
+        <div id="sam-gate-request-body">
+          <p class="sam-gate-text">SAM donne accès aux mesures des stations météo du réseau, aux prévisions et indicateurs agroclimatiques, au bilan d’irrigation de vos parcelles et aux suivis phénologie, tavelure et piégeage de SudExpé.</p>
+          <p class="sam-gate-text">Il est ouvert aux adhérents de SudExpé et à leurs conseillers. Laissez vos coordonnées : l’équipe vous répond par mail.</p>
+          <form class="sam-gate-form" id="sam-gate-request-form" novalidate>
+            <div class="sam-gate-grid">
+              <label class="sam-field">Prénom *<input id="sam-req-prenom" type="text" autocomplete="given-name" maxlength="60" required></label>
+              <label class="sam-field">Nom *<input id="sam-req-nom" type="text" autocomplete="family-name" maxlength="60" required></label>
+            </div>
+            <label class="sam-field">Adresse mail *<input id="sam-req-email" type="email" autocomplete="email" inputmode="email" maxlength="160" required></label>
+            <label class="sam-field">Téléphone<input id="sam-req-telephone" type="tel" autocomplete="tel" maxlength="30"></label>
+            <label class="sam-field">Structure ou exploitation *<input id="sam-req-structure" type="text" autocomplete="organization" maxlength="120" required></label>
+            <div class="sam-gate-grid">
+              <label class="sam-field">Commune<input id="sam-req-commune" type="text" autocomplete="address-level2" maxlength="80"></label>
+              <label class="sam-field">Vous êtes
+                <select id="sam-req-profil">
+                  <option value="Producteur">Producteur</option>
+                  <option value="Technicien ou conseiller">Technicien ou conseiller</option>
+                  <option value="Organisation de producteurs">Organisation de producteurs</option>
+                  <option value="Autre">Autre</option>
+                </select>
+              </label>
+            </div>
+            <label class="sam-field">Message<textarea id="sam-req-message" rows="3" maxlength="2000" placeholder="Stations ou outils qui vous intéressent, numéro d’adhérent…"></textarea></label>
+            <label class="sam-gate-trap" aria-hidden="true">Site web<input id="sam-req-site" type="text" tabindex="-1" autocomplete="off"></label>
+            <label class="sam-check"><input id="sam-req-accord" type="checkbox" required><span>J’accepte que SudExpé utilise ces informations pour traiter ma demande (<a href="legal/confidentialite.html" target="_blank" rel="noopener">confidentialité</a>).</span></label>
+            <p class="sam-form-message" id="sam-gate-request-message" role="status"></p>
+            <button class="sam-button sam-button-primary sam-gate-submit" type="submit" id="sam-gate-request-submit">Envoyer la demande</button>
+          </form>
+        </div>
+        <button class="sam-gate-link" type="button" id="sam-gate-request-back">Retour à la connexion</button>
+      </section>
+
       <section class="sam-gate-view" id="sam-gate-password-view" hidden>
         <h1 id="sam-gate-password-title">Choisir votre mot de passe</h1>
         <p class="sam-gate-text" id="sam-gate-password-text">Ce mot de passe vous servira à chaque connexion.</p>
@@ -57,14 +107,17 @@
         </form>
       </section>
     </main>
-    <p class="sam-gate-foot">SAM — Sud Agro Météo · SudExpé</p>
+    <footer class="sam-gate-foot">
+      <p>SAM — Sud Agro Météo · un service de SudExpé</p>
+      <nav aria-label="Informations légales"><a href="legal/mentions-legales.html">Mentions légales</a><a href="legal/confidentialite.html">Confidentialité</a><a href="legal/conditions.html">Conditions d’utilisation</a></nav>
+    </footer>
   </div>
 
   <div class="sam-app" id="sam-app" hidden>
     <aside class="sam-sidebar" id="sam-sidebar" aria-label="Stations du réseau SAM">
       <div class="sam-sidebar-inner">
         <a class="sam-brand" href="#/donnees" aria-label="SAM — Sud Agro Météo">
-          <img src="assets/img/logo-sam-blanc.png" alt="SAM — Sud Agro Météo" width="210" height="124">
+          <img src="assets/img/logo-sam-blanc.webp" alt="SAM — Sud Agro Météo" width="210" height="124">
         </a>
 
         <div class="sam-side-title"><span data-icon="station"></span>Stations</div>
@@ -94,14 +147,14 @@
       <header class="sam-topbar">
         <button class="sam-burger" id="sam-burger" type="button" aria-label="Afficher les stations" aria-controls="sam-sidebar" aria-expanded="false"><span data-icon="menu"></span></button>
         <button class="sam-expand" id="sam-expand" type="button" aria-label="Déplier le menu" title="Déplier le menu"><span data-icon="chevronRight"></span></button>
-        <a class="sam-top-brand" id="sam-top-brand" href="#/indicateurs" aria-label="SAM — Sud Agro Météo, accueil">
-          <img src="assets/img/logo-sam-blanc.png" alt="SAM — Sud Agro Météo" width="78" height="46">
+        <a class="sam-top-brand" id="sam-top-brand" href="#/donnees" aria-label="SAM — Sud Agro Météo, accueil">
+          <img src="assets/img/logo-sam-blanc.webp" alt="SAM — Sud Agro Météo" width="78" height="46">
         </a>
         <nav class="sam-topnav" aria-label="Sections">
           <a class="sam-topnav-link" id="sam-nav-donnees" href="#/donnees">Données</a>
           <a class="sam-topnav-link is-active" id="sam-nav-outils" href="#/indicateurs" aria-current="page"><span class="sam-nav-long">Outils SAM</span><span class="sam-nav-short">Outils</span></a>
           <a class="sam-topnav-link" id="sam-nav-carte" href="#/carte"><span class="sam-nav-long">Cartographie</span><span class="sam-nav-short">Carte</span></a>
-          <a class="sam-topnav-link sam-nav-admin" id="sam-nav-admin" href="#/admin" title="Administration : comptes, stations, capteurs" hidden><span class="sam-nav-icon" data-icon="settings"></span><span class="sam-nav-label">Administration</span></a>
+          <a class="sam-topnav-link sam-nav-admin" id="sam-nav-admin" href="#/admin" title="Administration : comptes, stations, capteurs" hidden><span class="sam-nav-icon" data-icon="settings"></span><span class="sam-nav-label">Administration</span><span class="sam-nav-badge" id="sam-nav-admin-badge" hidden></span></a>
         </nav>
         <div class="sam-topright">
           <button class="sam-top-item sam-install hidden" id="sam-install" type="button" title="Installer l’application sur cet appareil"><span data-icon="install"></span><span class="sam-top-label">Installer</span></button>
@@ -114,7 +167,7 @@
         <div class="sam-install-banner hidden" id="sam-install-banner" role="region" aria-label="Installer l’application">
           <img src="assets/img/icon-192.png" alt="" width="44" height="44">
           <div class="sam-install-banner-text">
-            <strong>Installer SAM Outils sur ce téléphone</strong>
+            <strong>Installer SAM sur ce téléphone</strong>
             <span>L’appli rejoint vos applications et s’ouvre en plein écran, sans barre d’adresse.</span>
           </div>
           <button class="sam-button sam-button-primary" id="sam-install-banner-go" type="button">Installer</button>
@@ -155,6 +208,12 @@
         <div class="sam-tool-loading hidden" id="sam-tool-loading"><span class="sam-spinner"></span>Chargement…</div>
         <div id="sam-tool" class="tool-root"></div>
       </main>
+      <footer class="sam-footer" id="sam-footer">
+        <nav class="sam-footer-links" aria-label="Aide et informations légales">
+          <a href="#/aide">Aide</a><a href="legal/mentions-legales.html">Mentions légales</a><a href="legal/confidentialite.html">Confidentialité</a><a href="legal/conditions.html">Conditions d’utilisation</a>
+        </nav>
+        <p class="sam-footer-sources">SAM — Sud Agro Météo, un service de SudExpé · Prévisions et données modélisées : <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (<a href="https://creativecommons.org/licenses/by/4.0/deed.fr" target="_blank" rel="noopener">CC BY 4.0</a>) · Cartes : IGN · Lieux : © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">les contributeurs d’OpenStreetMap</a> · Modèles maladies : RIMpro</p>
+      </footer>
     </div>
   </div>
 
@@ -163,7 +222,7 @@
       <div class="sam-dialog-head">
         <div>
           <p class="sam-kicker">Application</p>
-          <h2 id="sam-install-title">Installer SAM Outils</h2>
+          <h2 id="sam-install-title">Installer SAM</h2>
         </div>
         <button class="sam-icon-button" type="button" id="sam-install-close" aria-label="Fermer"><span data-icon="close"></span></button>
       </div>
@@ -174,11 +233,11 @@
 
   <div class="sam-toast" id="sam-toast" role="status" aria-live="polite"></div>
 
-  <noscript><p class="sam-noscript">SAM Outils nécessite JavaScript.</p></noscript>
+  <noscript><p class="sam-noscript">SAM nécessite JavaScript.</p></noscript>
 
   <script src="config.js"></script>
   <script src="assets/vendor/supabase-2.118.0.js"></script>
   <script src="assets/vendor/chart-4.4.7.umd.js"></script>
-  <script type="module" src="js/main.js?v=2026-11-23.1"></script>
+  <script type="module" src="js/main.js?v=2026-11-23.2"></script>
 </body>
 </html>

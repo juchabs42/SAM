@@ -1,11 +1,11 @@
 {
   "id": "./",
-  "name": "SAM Outils — Sud Agro Météo",
-  "short_name": "SAM Outils",
-  "description": "Indicateurs agroclimatiques, programmation de l'irrigation, bilan hydrique, phénologie, tavelure et piégeage.",
+  "name": "SAM — Sud Agro Météo",
+  "short_name": "SAM",
+  "description": "Mesures des stations du réseau SAM, prévisions, indicateurs agroclimatiques, irrigation, phénologie, tavelure et piégeage. Un service de SudExpé.",
   "lang": "fr",
   "dir": "ltr",
-  "start_url": "./#/indicateurs",
+  "start_url": "./#/donnees",
   "scope": "./",
   "display": "standalone",
   "display_override": [
@@ -42,6 +42,18 @@
   ],
   "shortcuts": [
     {
+      "name": "Données des stations",
+      "short_name": "Données",
+      "url": "./#/donnees",
+      "icons": [
+        {
+          "src": "assets/img/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
       "name": "Indicateurs agroclimatiques",
       "short_name": "Indicateurs",
       "url": "./#/indicateurs",
@@ -54,36 +66,24 @@
       ]
     },
     {
+      "name": "Bilan irrigation",
+      "short_name": "Bilan",
+      "url": "./#/pilotage",
+      "icons": [
+        {
+          "src": "assets/img/tools/pilotage.png",
+          "sizes": "112x112",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
       "name": "Programmation irrigation",
       "short_name": "Irrigation",
       "url": "./#/irrigation",
       "icons": [
         {
           "src": "assets/img/tools/irrigation.png",
-          "sizes": "112x112",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Suivi phénologique",
-      "short_name": "Phénologie",
-      "url": "./#/phenologie",
-      "icons": [
-        {
-          "src": "assets/img/tools/phenologie.png",
-          "sizes": "112x112",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Piégeage",
-      "short_name": "Piégeage",
-      "url": "./#/piegeage",
-      "icons": [
-        {
-          "src": "assets/img/tools/piegeage.png",
           "sizes": "112x112",
           "type": "image/png"
         }

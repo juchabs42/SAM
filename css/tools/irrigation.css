@@ -17,7 +17,7 @@
 .tool-irrigation .result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.tool-irrigation .result-grid article{padding:16px;border-radius:15px;background:#faf7f8;border:1px solid #eee5e7}.tool-irrigation .result-grid span{display:block;color:#74676b;font-size:.84rem}.tool-irrigation .result-grid strong{display:block;margin-top:6px;font-size:1.2rem}
 
 .tool-irrigation .legend{font-size:.82rem;color:#75686c}
-.tool-irrigation canvas{width:100%;display:block}.tool-irrigation .formula-card p{margin:8px 0}.tool-irrigation .error{background:#ffe8e8;color:#8d1e2d;padding:13px;border-radius:12px}.tool-irrigation .attribution{text-align:center;color:#86787c;font-size:.75rem}
+.tool-irrigation canvas{width:100%;display:block}.tool-irrigation .formula-card p{margin:8px 0}.tool-irrigation .error{background:#ffe8e8;color:#8d1e2d;padding:13px;border-radius:12px}.tool-irrigation .attribution{text-align:center;color:#6b5f62;font-size:.75rem}.tool-irrigation .attribution a{color:inherit}
 @media(max-width:680px){
   .tool-irrigation .form-grid,.tool-irrigation .result-grid{grid-template-columns:1fr}
   .tool-irrigation .ghost-button{font-size:.78rem}

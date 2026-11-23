@@ -355,3 +355,49 @@
 @media (max-width: 640px) {
   .tool-admin .adm-access-modes { grid-template-columns: 1fr; }
 }
+
+/* Pastilles des onglets : demandes d'accès en attente, stations à surveiller */
+.tool-admin .adm-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ffd54a;
+  color: #3d2c00;
+  font-size: .74rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.tool-admin .adm-tab-badge[hidden] { display: none; }
+
+/* Demandes d'accès */
+.tool-admin .adm-requests a.adm-muted { text-decoration: none; }
+.tool-admin .adm-requests a.adm-muted:hover { color: var(--sam-red-700); text-decoration: underline; }
+.tool-admin .adm-req-message { max-width: 360px; white-space: pre-line; overflow-wrap: anywhere; font-size: .88rem; color: var(--sam-ink-2); }
+.tool-admin .adm-requests .adm-cell-actions .adm-badge { margin-right: 4px; }
+
+/* Double authentification */
+.tool-admin .adm-mfa { display: inline-flex; vertical-align: middle; margin-left: 6px; color: #2e7d32; }
+.tool-admin .adm-mfa svg { width: 16px; height: 16px; }
+.tool-admin .adm-nudge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid #c9d7f2;
+  border-radius: 12px;
+  background: #f3f7ff;
+  color: #1f3a66;
+  font-size: .9rem;
+}
+.tool-admin .adm-nudge p { flex: 1; margin: 0; line-height: 1.45; }
+.tool-admin .adm-nudge a { color: inherit; font-weight: 700; }
+.tool-admin .adm-nudge-icon { display: inline-flex; flex: none; }
+.tool-admin .adm-nudge-icon svg { width: 22px; height: 22px; }
+@media (max-width: 560px) {
+  .tool-admin .adm-nudge { flex-wrap: wrap; }
+  .tool-admin .adm-tabs button .adm-tab-badge { min-width: 18px; height: 18px; padding: 0 5px; }
+}

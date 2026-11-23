@@ -24,6 +24,24 @@ on conflict (email) do update set niveau = 'full';
 
 -- 2. Fonctions de contrôle
 -- is_sam_admin() (déjà existante) : vrai pour « admin » ET « full admin ».
+-- Double authentification (double_authentification.sql) : pour un compte qui l'a
+-- activée, les droits ne s'appliquent qu'une fois le code saisi (jeton « aal2 »).
+create or replace function public.sam_mfa_ok()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce((select auth.jwt() ->> 'aal'), 'aal1') = 'aal2'
+      or not exists (
+        select 1 from auth.mfa_factors f
+        where f.user_id = (select auth.uid()) and f.status = 'verified'
+      );
+$$;
+revoke all on function public.sam_mfa_ok() from public, anon;
+grant execute on function public.sam_mfa_ok() to authenticated;
+
 create or replace function public.is_sam_full_admin()
 returns boolean
 language sql
@@ -38,10 +56,11 @@ as $$
     where u.id = auth.uid()
       and u.email_confirmed_at is not null
       and a.niveau = 'full'
-  );
+  ) and public.sam_mfa_ok();
 $$;
 
 -- Rôle du compte connecté : 'full', 'admin' ou 'normal' (lu par le site).
+-- Sans le code de double authentification (compte qui l'a activée) : 'normal'.
 create or replace function public.sam_role()
 returns text
 language sql
@@ -49,13 +68,13 @@ stable
 security definer
 set search_path = public, auth
 as $$
-  select coalesce((
+  select case when not public.sam_mfa_ok() then 'normal' else coalesce((
     select a.niveau
     from auth.users u
     join public.sam_admins a on a.email = lower(u.email)
     where u.id = auth.uid()
       and u.email_confirmed_at is not null
-  ), 'normal');
+  ), 'normal') end;
 $$;
 
 revoke all on function public.is_sam_full_admin() from public, anon;

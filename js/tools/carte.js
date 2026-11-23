@@ -111,6 +111,8 @@ export async function mount(root, ctx) {
   // Une station pas encore installée n'a pas de données : seuls les administrateurs l'ouvrent
   // (pour compléter sa fiche).
   const canOpen = station => station.installee !== false || ctx.isFullAdmin;
+  // Les comptes « normal » (producteurs) ne voient que les stations installées.
+  const visibleStations = () => store.list.filter(s => s.installee !== false || ctx.isAdmin);
 
   // Station RIMpro : ouvre directement l'onglet « Maladies / ravageurs » (modèles RIMpro)
   // des Données ; les autres stations n'ont pas cet onglet utile, on évite donc d'y arriver.
@@ -191,7 +193,7 @@ export async function mount(root, ctx) {
     L.control.scale({ imperial: false }).addTo(map);
     layer = L.layerGroup().addTo(map);
 
-    const points = store.list.filter(located);
+    const points = visibleStations().filter(located);
     if (savedView) map.setView(savedView.center, savedView.zoom, { animate: false });
     else if (points.length > 1) map.fitBounds(L.latLngBounds(points.map(s => [s.latitude, s.longitude])), { padding: [48, 48], maxZoom: 12, animate: false });
     else if (points.length === 1) map.setView([points[0].latitude, points[0].longitude], 12, { animate: false });
@@ -348,7 +350,7 @@ export async function mount(root, ctx) {
   function renderMarkers() {
     if (!map || !window.L) return;
     layer.clearLayers();
-    const points = store.list.filter(located);
+    const points = visibleStations().filter(located);
     clusters(points).forEach(group => {
       (group.items.length > 1 ? groupMarker(group.items) : stationMarker(group.items[0])).addTo(layer);
     });

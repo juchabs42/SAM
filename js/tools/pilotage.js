@@ -681,8 +681,8 @@ export async function mount(root, ctx) {
         ${saisieJour > 0 ? `<p class="pil-dose">Irrigation saisie aujourd’hui : ${f1(saisieJour)} mm.</p>` : ''}
         ${first ? blocApport(quand, first.net, first.brut) : ''}`;
     } else {
-      principal = `<p class="pil-titre is-ok">Seuil d’irrigation non atteint</p>
-        <p class="pil-dose">Aucun apport n’est calculé : l’eau du sol reste au-dessus du seuil d’irrigation.</p>`;
+      principal = `<p class="pil-titre is-ok">Réserve en eau suffisante</p>
+        <p class="pil-dose">Pas d’irrigation à prévoir : l’eau du sol reste au-dessus du seuil d’irrigation sur la période de prévision.</p>`;
     }
 
     // Prévision en quelques lignes, comme un bilan : apports, consommation, pluie, eau restante
@@ -940,6 +940,8 @@ export async function mount(root, ctx) {
           <label class="sam-field pil-large">Fichier Excel<input type="file" id="pil-import-fichier" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"></label>
           <label class="sam-field">Unité de la colonne Apport<select id="pil-import-unite" class="sam-input">${unites}</select></label>
         </div>
+        <p class="pil-modele"><button type="button" class="sam-button" data-action="modele-excel"><span aria-hidden="true">⤓</span> Télécharger le modèle Excel</button>
+          <span class="pil-muted">Dates de la saison déjà remplies : indiquez l’apport les jours d’irrigation, laissez vide les autres.</span></p>
         <div id="pil-import-apercu"></div>
         <p class="sam-form-message" id="pil-import-msg"></p>
       </div>
@@ -1027,6 +1029,57 @@ export async function mount(root, ctx) {
     $('#pil-import-unite').addEventListener('change', () => { if ($('#pil-import-fichier').files?.length) lireImport(); });
   }
 
+  /** Modèle Excel d'import : une ligne par jour de la saison de la parcelle, colonnes Date et Apport. */
+  async function telechargerModele(button) {
+    const p = courante();
+    if (!p) return;
+    button.disabled = true;
+    try {
+      await ctx.vendor.xlsx();
+      const XLSX = window.XLSX;
+      if (!XLSX) throw new Error('module Excel indisponible');
+      const unite = $('#pil-import-unite')?.value || 'mm';
+      const entete = unite === 'm3ha' ? 'Apport (m3/ha)' : unite === 'heures' ? 'Durée (h)' : 'Apport (mm)';
+      // Saison de la parcelle (calcul en cours), sinon du 1er avril au 30 septembre de l'année
+      const annee = String(S.annee || today.slice(0, 4));
+      const st = S.calc?.param?.stades;
+      let debut = st?.debut || `${annee}-04-01`;
+      let fin = st?.fin || `${annee}-09-30`;
+      if (!(debut < fin) || C.ecartJours(debut, fin) > 366) { debut = `${annee}-04-01`; fin = `${annee}-09-30`; }
+      // Dates Excel écrites en numéro de série (sans heure ni fuseau) au format jj/mm/aaaa
+      const serie = iso => (Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) - Date.UTC(1899, 11, 30)) / 86400000;
+      const ws = { '!ref': 'A1:B1' };
+      ws.A1 = { t: 's', v: 'Date' };
+      ws.B1 = { t: 's', v: entete };
+      let ligne = 1;
+      for (let jour = debut; jour <= fin; jour = addDaysISO(jour, 1)) {
+        ligne += 1;
+        ws[`A${ligne}`] = { t: 'n', v: serie(jour), z: 'dd/mm/yyyy' };
+      }
+      ws['!ref'] = `A1:B${ligne}`;
+      ws['!cols'] = [{ wch: 12 }, { wch: 16 }];
+      const aide = XLSX.utils.aoa_to_sheet([
+        ['Import des irrigations dans SAM — Bilan irrigation'],
+        [''],
+        ['1. Feuille « Irrigations » : indiquez l’apport dans la colonne B les jours d’irrigation ; laissez la case vide les autres jours.'],
+        [`2. Unité de la colonne B : ${unite === 'm3ha' ? 'm³/ha' : unite === 'heures' ? 'heures de poste (la pluviométrie du réseau, en mm/h, est celle de la parcelle dans SAM)' : 'mm'}, la même pour toute la colonne. L’en-tête l’indique à SAM.`],
+        ['3. Vous pouvez ajouter, supprimer ou modifier des dates (une date par ligne, au format jj/mm/aaaa) ou coller vos propres relevés à la place.'],
+        ['4. Dans SAM : Bilan irrigation → parcelle → onglet « Irrigations et pluies » → « Importer un fichier Excel ». Un aperçu s’affiche avant l’enregistrement.'],
+        ['Les irrigations déjà enregistrées (même date, même apport) ne sont pas importées deux fois.']
+      ]);
+      aide['!cols'] = [{ wch: 110 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Irrigations');
+      XLSX.utils.book_append_sheet(wb, aide, 'Mode d’emploi');
+      const nom = String(p.nom || p.name || 'parcelle').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'parcelle';
+      XLSX.writeFile(wb, `SAM-irrigations-${nom}-${annee}.xlsx`);
+    } catch (error) {
+      ctx.ui.toast(`Modèle indisponible : ${error.message || error}`, 5000);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   /** Lecture du fichier Excel d'irrigations (colonnes Date et Apport) et aperçu avant import. */
   async function lireImport() {
     const p = courante();
@@ -1052,11 +1105,13 @@ export async function mount(root, ctx) {
       const cleDate = entetes.find(h => ['date', 'dateirrigation', 'jour'].includes(norm(h)));
       const cleApport = entetes.find(h => ['apport', 'apportmm', 'irrigation', 'irrigationmm', 'quantite', 'quantitemm', 'mm', 'dose', 'dosemm', 'apportm3ha', 'm3ha', 'volume', 'volumem3ha', 'duree', 'dureeh', 'heures'].includes(norm(h)));
       if (!cleDate || !cleApport) throw new Error('Le fichier doit contenir une colonne « Date » et une colonne « Apport ».');
-      // Unité devinée d'après l'en-tête de colonne, sinon celle choisie dans la liste
+      // Unité écrite dans l'en-tête de colonne (« Apport (mm) », « Apport (m3/ha) », « Durée (h) »),
+      // sinon celle choisie dans la liste
       const nh = norm(cleApport);
       const sel = $('#pil-import-unite');
       if (/m3/.test(nh) || nh === 'volume') sel.value = 'm3ha';
       else if (/duree|heure/.test(nh) && !sel.querySelector('option[value="heures"]').disabled) sel.value = 'heures';
+      else if (/mm$/.test(nh)) sel.value = 'mm';
       const unite = sel.value;
       const pluvio = p.config.irrigation.pluvio;
       const valides = [];
@@ -1064,7 +1119,8 @@ export async function mount(root, ctx) {
       raw.forEach((row, i) => {
         const jour = dateExcel(row[cleDate]);
         const valeur = num(row[cleApport]);
-        if (row[cleDate] === null && row[cleApport] === null) return;
+        // Ligne vide, ou date sans apport (modèle : jours sans irrigation) : ignorée sans erreur
+        if (row[cleApport] === null || String(row[cleApport]).trim() === '') return;
         if (!jour) { erreurs.push(`ligne ${i + 2} : date illisible`); return; }
         const brut = IR.brutDepuisSaisie({ unite, valeur, pluvioMmH: pluvio });
         if (!finite(brut) || brut < 0 || brut > 500) { erreurs.push(`ligne ${i + 2} : apport invalide`); return; }
@@ -1128,7 +1184,8 @@ export async function mount(root, ctx) {
     const cl = classeDe(cult, d.classe_id);
     const annuel = estAnnuel(cult);
     const sys = systemeParId(cfg.irrigation.systeme);
-    const stations = ctx.stations.store.list || [];
+    // Stations installées (une station à venir n'a pas de mesures), plus celle déjà choisie
+    const stations = (ctx.stations.store.list || []).filter(s => s.installee !== false || s.id === d.station_id);
     const loc = cfg.irrigation.localise || {};
     const libStades = annuel ? LIBELLES_STADES.annuel : LIBELLES_STADES.perenne;
     const aidesStades = annuel ? AIDES_STADES.annuel : AIDES_STADES.perenne;
@@ -1831,6 +1888,8 @@ export async function mount(root, ctx) {
         calculer();
       } else if (action === 'csv') {
         exporterCsv();
+      } else if (action === 'modele-excel') {
+        await telechargerModele(btn);
       } else if (action === 'importer') {
         btn.disabled = true;
         await importer();

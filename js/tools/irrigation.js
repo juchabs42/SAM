@@ -114,7 +114,7 @@ const TEMPLATE = `
 
   </section>
   <p id="updatedAt" class="muted center"></p>
-  <p class="attribution">Données météo : Open-Meteo.</p>
+  <p class="attribution">Données météo : <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0).</p>
 </div>`;
 
 const KC_TABLE = {

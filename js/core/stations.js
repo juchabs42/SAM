@@ -21,6 +21,12 @@ export function stationState(station) {
   return { key: 'silent', label: 'Muette' };
 }
 
+/** Station posée et active dont la transmission pose problème (en retard, muette, jamais reçue, erreur Comsag). */
+export function stationToWatch(station) {
+  if (station.installee === false || station.active === false) return false;
+  return ['late', 'silent', 'never'].includes(stationState(station).key) || Boolean(station.derniere_erreur);
+}
+
 const byName = (a, b) => a.nom.localeCompare(b.nom, 'fr');
 
 export const stationStore = {

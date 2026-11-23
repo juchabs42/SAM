@@ -1,0 +1,9 @@
+# Fichiers du dépôt qui ne sont pas publiés sur le site (Cloudflare Workers, ressources statiques).
+# Syntaxe .gitignore. Les scripts SQL, les tests et la documentation restent sur GitHub seulement.
+.git
+.github
+.nojekyll
+README.md
+supabase
+tests
+wrangler.jsonc

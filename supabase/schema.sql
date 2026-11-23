@@ -41,6 +41,24 @@ alter table public.sam_admins enable row level security;
 -- Aucune politique : la liste n'est ni lisible ni modifiable depuis le site.
 -- Elle se gère uniquement ici (SQL Editor) ou dans Table Editor.
 
+-- Double authentification (double_authentification.sql) : pour un compte qui l'a
+-- activée, les droits admin ne s'appliquent qu'une fois le code saisi (jeton « aal2 »).
+create or replace function public.sam_mfa_ok()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce((select auth.jwt() ->> 'aal'), 'aal1') = 'aal2'
+      or not exists (
+        select 1 from auth.mfa_factors f
+        where f.user_id = (select auth.uid()) and f.status = 'verified'
+      );
+$$;
+revoke all on function public.sam_mfa_ok() from public, anon;
+grant execute on function public.sam_mfa_ok() to authenticated;
+
 create or replace function public.is_sam_admin()
 returns boolean
 language sql
@@ -54,7 +72,7 @@ as $$
     join public.sam_admins a on a.email = lower(u.email)
     where u.id = auth.uid()
       and u.email_confirmed_at is not null
-  );
+  ) and public.sam_mfa_ok();
 $$;
 
 revoke all on function public.is_sam_admin() from public;
@@ -75,7 +93,7 @@ as $$
     where u.id = auth.uid()
       and u.email_confirmed_at is not null
       and a.niveau = 'full'
-  );
+  ) and public.sam_mfa_ok();
 $$;
 
 revoke all on function public.is_sam_full_admin() from public, anon;

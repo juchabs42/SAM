@@ -1,7 +1,9 @@
-# SAM Outils — Sud Agro Météo (prototype)
+# SAM — Sud Agro Météo
 
-Application unique qui regroupe les six outils SAM et les données des stations du réseau.
-**La connexion est obligatoire** : les comptes sont créés dans Supabase par SudExpé.
+Application unique qui regroupe les données des stations du réseau et les six outils SAM.
+**La connexion est obligatoire** : les comptes sont créés par SudExpé (Administration → Comptes).
+L'application s'ouvre sur l'onglet Données. Guide de reprise complet : « Guide Full admin — SAM »
+(document Claude de Julien Chabat).
 
 | Outil | Données | Accès (compte connecté) |
 |---|---|---|
@@ -13,7 +15,8 @@ Application unique qui regroupe les six outils SAM et les données des stations 
 | Suivi phénologique | Supabase + Open-Meteo | lecture, saisie admin et full admin |
 | Tavelure | Supabase | lecture, saisie admin et full admin |
 | Piégeage | Supabase | lecture, saisie admin et full admin |
-| Administration (comptes, stations, capteurs) | Supabase + fonction `sam-admin` | full admin uniquement |
+| Administration (comptes, demandes d'accès, stations, capteurs) | Supabase + fonction `sam-admin` | full admin uniquement |
+| Aide (questions fréquentes, contact) | — | tous les comptes |
 
 **Rôles**
 
@@ -38,6 +41,25 @@ la carte, et Bilan irrigation (qui garde alors la pluie d’Open-Meteo). Les mes
 effacées : elles restent consultables dans Administration → Capteurs. Nécessite
 `supabase/capteurs_masques.sql`.
 
+**Demandes d'accès** : la page de connexion propose « Demander un accès » (formulaire public :
+coordonnées, structure, profil, message, accord RGPD). Les demandes arrivent dans Administration →
+Comptes → « Demandes d’accès » : « Inviter » ouvre l'invitation pré-remplie et marque la demande
+traitée ; « Archiver » la range. Une pastille jaune sur l'onglet Administration compte les demandes
+en attente et les stations à surveiller (posées, actives, sans mesure depuis plus de 3 h ou en
+erreur). Nécessite `supabase/demandes_acces.sql` (dépôt contrôlé : adresse valide, champ piège,
+une demande par adresse et par jour, 20 par heure au plus).
+
+**Double authentification** : chaque compte peut l'activer dans Mon profil (code à 6 chiffres
+de Google Authenticator, Microsoft Authenticator…), recommandée pour les full admins (rappel dans
+l'Administration). Une fois activée, le code est demandé à chaque connexion et, sans lui, la base
+refuse les droits admin et full admin (`supabase/double_authentification.sql`, mêmes définitions
+dans `schema.sql` et `roles.sql`). Téléphone perdu : Administration → Comptes → Fiche utilisateur
+→ « Retirer la double authentification » (ou Supabase → Authentication → Users → le compte).
+
+**Pages légales** : `legal/mentions-legales.html`, `legal/confidentialite.html`,
+`legal/conditions.html` (pages statiques, lisibles sans connexion), liées depuis la page de
+connexion, le pied de page et l'Aide.
+
 **Fiche station** : la même fenêtre (`js/core/station-dialog.js`) s’ouvre depuis Administration →
 Stations (« Modifier », « + Nouvelle station ») et depuis Données (« Fiche station », full admin) :
 identité, position sur la carte, RIMpro, collecte, accès météo / irrigation compte par compte.
@@ -59,11 +81,18 @@ pommier et du poirier, oïdium du pommier, feu bactérien, chancre européen, Ma
 stemphyliose, moniliose, cylindrosporiose du cerisier, carpocapse, puceron cendré, psylle du
 poirier, et pour la vigne mildiou/oïdium/black-rot et eudémis (pages `rimpro.eu`, en français).
 
+**Suivi phénologique** : seules les parcelles des variétés cultivées chez les producteurs sont
+gardées. Les parcelles des blocs G et H (toutes années : 117 parcelles, 2 140 observations) ont été
+retirées le 23/11/2026, après sauvegarde dans `sam_private.pheno_parcels_retirees` et
+`sam_private.pheno_observations_retirees` (restauration possible par une requête SQL).
+
 Tous les graphiques ont un bouton « Agrandir » en haut à droite (à côté du CSV quand celui-ci est dans l’en-tête du graphique) qui les affiche en pleine page.
 
 Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
-(`https://sam.juju-chabat42.workers.dev`, redéployé à chaque poussée sur `main`) et par GitHub Pages
-(`https://juchabs42.github.io/SAM-Outils/`).
+(`https://sam.juju-chabat42.workers.dev`, redéployé à chaque poussée sur `main`). Seuls les
+fichiers du site sont publiés : `.assetsignore` exclut `supabase/`, `tests/` et ce README.
+`_headers` fixe les en-têtes de sécurité (dont la politique de contenu CSP : liste des services
+externes autorisés, à compléter si un outil appelle un nouveau service) et la durée de cache.
 
 ## Mise en route Supabase (une seule fois)
 
@@ -75,7 +104,9 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
    puis `supabase/acces_stations.sql` (qui voit les données météo / irrigation de chaque station),
    puis `supabase/capteurs_masques.sql` (capteurs affichés ou masqués, station par station),
    puis `supabase/activite_comptes.sql` (dernière activité réelle de chaque compte, affichée
-   dans Administration → Comptes).
+   dans Administration → Comptes),
+   puis `supabase/double_authentification.sql`, `supabase/demandes_acces.sql` et
+   `supabase/maintenance.sql` (purge nocturne du journal des tâches automatiques).
 2. **Authentication → Sign In / Providers** : désactiver *Allow new users to sign up*.
 3. **Authentication → URL Configuration** : *Site URL* = adresse principale du site
    (aujourd'hui `https://sam.juju-chabat42.workers.dev`, plus tard le nom de domaine définitif).
@@ -101,7 +132,7 @@ Site statique (HTML, CSS, JavaScript sans compilation), publié par Cloudflare
    n'écrit qu'aux membres de l'équipe du projet, avec un très petit nombre de mails par heure.
    Pour inviter des producteurs :
    - *Authentication → Emails → SMTP Settings* : activer *Enable custom SMTP* et saisir
-     l'adresse d'envoi `sudagrometeo@gmail.com`, le nom (« SAM Outils »), serveur `smtp.gmail.com`,
+     l'adresse d'envoi `sudagrometeo@gmail.com`, le nom (« SAM »), serveur `smtp.gmail.com`,
      port `465`, identifiant `sudagrometeo@gmail.com`, mot de passe = **mot de passe d'application**
      Google (compte Google → Sécurité → Validation en deux étapes activée → Mots de passe
      des applications), jamais le mot de passe habituel du compte ;
@@ -122,7 +153,9 @@ config.js             URL et clé publique Supabase
 css/app.css           styles du cadre
 css/tools/*.css       styles de chaque outil (limités à leur conteneur)
 js/core/*.js          connexion, profil, stations, lieux, période, navigation
-js/tools/*.js         un module par outil
+js/tools/*.js         un module par outil (aide.js : page Aide)
+legal/                pages légales (mentions, confidentialité, conditions d'utilisation)
+404.html              page « introuvable »
 js/fao56/             moteur du Bilan irrigation (méthode FAO-56, 2025) : ET₀, coefficients, bilan, apports
 js/fao56/data/        tables FAO-56 2025 (cultures, sols, systèmes d'irrigation, paillages) avec leurs sources
 tests/fao56/          tests du moteur sur les exemples chiffrés de FAO-56 (node --test "tests/fao56/*.test.mjs")
@@ -132,17 +165,22 @@ supabase/roles.sql    rôles normal / admin / full admin
 supabase/acces_stations.sql  accès aux données météo / irrigation, station par station
 supabase/capteurs_masques.sql  capteurs masqués station par station (pluviomètre absent…)
 supabase/doublons_mesures.sql  fusion des mesures Comsag reçues en double (exécuté le 22/11/2026)
+supabase/double_authentification.sql  code à 6 chiffres exigé pour les droits admin des comptes qui l'activent
+supabase/demandes_acces.sql  formulaire « Demander un accès » (table + fonction publique contrôlée)
+supabase/maintenance.sql  purge du journal cron (14 jours), chemins de recherche des fonctions
 supabase/activite_comptes.sql  dernière activité réelle des comptes (sessions qui se prolongent seules)
 supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bilan hydrique
 supabase/emails/      modèles des mails d'invitation et de mot de passe (en français)
-_headers              en-têtes de sécurité (hébergement Cloudflare)
+_headers              en-têtes de sécurité, politique CSP, durée de cache (Cloudflare)
+.assetsignore         fichiers du dépôt non publiés (SQL, tests, README)
 service-worker.js     fonctionnement hors connexion
 ```
 
 ## Mise à jour
 
 Les fichiers sont servis tels quels : une modification poussée sur `main` est en ligne
-après le redéploiement Cloudflare et GitHub Pages (1 à 2 minutes). Le service worker recharge
+après le redéploiement Cloudflare (1 à 2 minutes). Penser à changer le numéro de version
+(`APP_VERSION` dans `js/core/shell.js`, `?v=` dans `index.html`, `CACHE` dans `service-worker.js`). Le service worker recharge
 automatiquement la dernière version quand l'appareil est connecté.
 
 ## Nom de domaine

@@ -1,5 +1,5 @@
-// Point d'entrée de SAM Outils : connexion obligatoire, puis l'application.
-import { auth, initAuth } from './core/auth.js';
+// Point d'entrée de SAM : connexion obligatoire, puis l'application.
+import { auth, initAuth, mfaRequired } from './core/auth.js';
 import { runGate } from './core/gate.js';
 import { startShell } from './core/shell.js';
 
@@ -17,6 +17,9 @@ async function boot() {
     await runGate({ mode: 'password' });
   } else if (!auth.user) {
     await runGate({ message: auth.linkError || '' });
+  } else if (await mfaRequired()) {
+    // Session ouverte sans le code de double authentification (application fermée à cette étape).
+    await runGate({ mode: 'mfa' });
   }
 
   startShell();
