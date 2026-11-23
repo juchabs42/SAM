@@ -62,7 +62,7 @@ function withTimeout(promise, ms) {
 
 async function rpcRole() {
   const { data, error } = await withTimeout(auth.client.rpc('sam_role'), 8000);
-  if (!error) return ['full', 'admin'].includes(data) ? data : 'normal';
+  if (!error) return ['full', 'admin', 'conseiller'].includes(data) ? data : 'normal';
   // Fonction absente (roles.sql pas encore exécuté) : ancien contrôle, tout administrateur = full admin.
   if (error.code === 'PGRST202' || /sam_role/.test(error.message || '')) {
     const legacy = await withTimeout(auth.client.rpc('is_sam_admin'), 8000);

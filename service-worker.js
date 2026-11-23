@@ -2,7 +2,7 @@
 // Fichiers du site : réseau d'abord (toujours la dernière version en ligne),
 // copie locale en secours hors connexion. Les API (Open-Meteo, Supabase…) ne sont
 // pas interceptées : chaque outil gère ses propres données hors connexion.
-const CACHE = 'sam-outils-v29';
+const CACHE = 'sam-outils-v30';
 const CORE = [
   './',
   './index.html',
@@ -69,4 +69,29 @@ self.addEventListener('fetch', event => {
       throw error;
     }
   })());
+});
+
+// Alertes gel : notification reçue de la fonction Supabase « sam-alertes »
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data?.text() }; }
+  event.waitUntil(self.registration.showNotification(data.title || 'SAM', {
+    body: data.body || '',
+    icon: './assets/img/icon-192.png',
+    tag: data.tag || 'sam',
+    renotify: true,
+    requireInteraction: true,
+    data: { url: data.url || './#/donnees' }
+  }));
+});
+
+// Toucher la notification : ouvre SAM (ou revient sur la fenêtre déjà ouverte)
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || './', self.registration.scope).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const client = list.find(c => c.url.startsWith(self.registration.scope));
+    if (client) return client.navigate(url).then(c => (c || client).focus());
+    return self.clients.openWindow(url);
+  }));
 });

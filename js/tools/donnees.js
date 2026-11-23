@@ -111,6 +111,7 @@ const TEMPLATE = `
       </div>
       <div class="don-head-actions">
         <span id="donStationState" class="don-state"></span>
+        <button class="don-btn don-export hidden" type="button" id="donExport" title="Toutes les mesures horaires et le résumé journalier de la période, dans un fichier Excel">Exporter (Excel)</button>
         <button class="don-btn don-admin hidden" type="button" id="donEditStation">Fiche station</button>
       </div>
     </header>
@@ -248,6 +249,8 @@ export async function mount(root, ctx) {
 
   function renderAdmin() {
     root.querySelectorAll('.don-admin').forEach(el => el.classList.toggle('hidden', !isAdmin()));
+    // Export Excel : conseillers, admins et full admins
+    $('donExport').classList.toggle('hidden', !['conseiller', 'admin', 'full'].includes(ctx.role));
   }
 
   // -------------------------------------------------------------------------
@@ -761,6 +764,41 @@ export async function mount(root, ctx) {
     download(`SAM_${safeName(station.nom)}_resume_journalier_${p.start}_${p.end}.csv`, [header, ...lines]);
   }
 
+  /** Export Excel de la période : mesures horaires (tous les capteurs visibles) et résumé journalier. */
+  async function exportExcel(button) {
+    const station = selected();
+    const p = ctx.period.get();
+    if (!station || !hourly.length) return ctx.ui.toast('Aucune mesure à exporter sur cette période.');
+    button.disabled = true;
+    try {
+      await ctx.vendor.xlsx();
+      const XLSX = window.XLSX;
+      const codes = [...new Set(hourly.flatMap(r => Object.keys(r.others)))].filter(shown).sort();
+      const base = [
+        shown('t1') && { head: 'Température air (°C)', get: r => r.t },
+        shown('hyg1') && { head: 'Humidité relative (%)', get: r => r.hr },
+        shown('pluv') && { head: 'Pluviométrie (mm)', get: r => r.rain }
+      ].filter(Boolean);
+      const autres = codes.map(code => ({ head: `${sensorName(code)}${sensorUnit(code) ? ` (${sensorUnit(code)})` : ''}`, get: r => num(r.others[code]) }));
+      const cols = [...base, ...autres];
+      const horaire = [['Date', 'Heure', ...cols.map(c => c.head)], ...hourly.map(r => [dayKey(r.at), hourOf(r.at), ...cols.map(c => round(c.get(r)))])];
+      const daily = dailyColumns();
+      const journalier = [['Jour', ...daily.map(c => c.head)], ...dailyRows().map(d => [d.day, ...daily.map(c => c.value(d))])];
+      const wb = XLSX.utils.book_new();
+      const ws1 = XLSX.utils.aoa_to_sheet(horaire);
+      ws1['!cols'] = [{ wch: 11 }, { wch: 7 }, ...cols.map(c => ({ wch: Math.max(10, Math.min(28, c.head.length + 2)) }))];
+      const ws2 = XLSX.utils.aoa_to_sheet(journalier);
+      ws2['!cols'] = [{ wch: 11 }, ...daily.map(() => ({ wch: 13 }))];
+      XLSX.utils.book_append_sheet(wb, ws1, 'Horaire');
+      XLSX.utils.book_append_sheet(wb, ws2, 'Journalier');
+      XLSX.writeFile(wb, `SAM_${safeName(station.nom)}_${p.start}_${p.end}.xlsx`);
+    } catch (error) {
+      ctx.ui.toast(`Export impossible : ${error.message || error}`, 5000);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function renderView() {
     root.querySelectorAll('.don-view-tab').forEach(tab => {
       const on = tab.dataset.view === view;
@@ -871,6 +909,7 @@ export async function mount(root, ctx) {
   });
   $('donDailyMore').addEventListener('click', () => { dailyExpanded = !dailyExpanded; renderDailyTable(); });
   $('donDailyCsv').addEventListener('click', exportDaily);
+  $('donExport').addEventListener('click', event => exportExcel(event.currentTarget));
   $('donForecast').addEventListener('click', () => {
     const place = stationPlace(selected());
     if (!place) { ctx.ui.toast('Position de la station inconnue : prévisions indisponibles.'); return; }

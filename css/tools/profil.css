@@ -64,3 +64,17 @@
 .tool-profil .sam-button-danger:hover { background: #fff1f2; }
 .tool-profil .pro-help p { margin: 0; color: var(--sam-ink-2); font-size: .92rem; }
 .tool-profil .pro-help a, .tool-profil .pro-muted a { color: var(--sam-red-700); }
+
+/* Alertes gel */
+.tool-profil .pro-gel-liste { display: grid; gap: 10px; margin: 0 0 14px; padding: 0; list-style: none; }
+.tool-profil .pro-gel-liste li { display: grid; grid-template-columns: minmax(160px, 1fr) auto auto; align-items: center; gap: 10px 18px; padding: 12px 14px; border: 1px solid var(--sam-line); border-radius: 12px; }
+.tool-profil .pro-gel-titre { display: grid; gap: 2px; }
+.tool-profil .pro-gel-titre span { color: var(--sam-muted); font-size: .86rem; }
+.tool-profil .pro-gel-options { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.tool-profil .pro-gel-ajout { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 0 0 16px; }
+.tool-profil .pro-gel-ajout .sam-field { flex: 1 1 180px; }
+.tool-profil .pro-gel-ajout #proGelSeuil { max-width: 120px; }
+.tool-profil .pro-gel-appareil { padding-top: 14px; border-top: 1px solid var(--sam-line); }
+@media (max-width: 760px) {
+  .tool-profil .pro-gel-liste li { grid-template-columns: 1fr; }
+}
