@@ -158,3 +158,22 @@ notify pgrst, 'reload schema';
 --   values ('prenom.nom@exemple.fr', 'meteo', null)
 --   on conflict (email) do update set formule = excluded.formule, acces_jusqu = excluded.acces_jusqu, maj_le = now();
 -- =============================================================================
+
+-- 5. Alerte gel du soir (prévision) : formule Complète seulement — la formule Météo n'a pas
+--    les prévisions (outil Indicateurs) ; elle garde l'alerte sur mesure.
+create or replace function public.sam_alertes_gel_prevision()
+returns table (alerte_id uuid, user_id uuid, email text, station_id text, station_nom text,
+               latitude double precision, longitude double precision, seuil real, par_mail boolean, par_notification boolean)
+language sql stable security definer set search_path = ''
+as $$
+  select a.id, a.user_id, u.email::text, s.id, s.nom, s.latitude, s.longitude, a.seuil, a.par_mail, a.par_notification
+  from public.alertes_gel a
+  join auth.users u on u.id = a.user_id and (u.banned_until is null or u.banned_until < now())
+  join public.stations s on s.id = a.station_id and s.installee and s.latitude is not null and s.longitude is not null
+  where a.actif and a.prevision and (a.par_mail or a.par_notification)
+    and (a.derniere_alerte_prevision is null or a.derniere_alerte_prevision < (now() at time zone 'Europe/Paris')::date)
+    and sam_private.voit_meteo(a.user_id, s.id)
+    and sam_private.formule_de(a.user_id) = 'complete';
+$$;
+revoke all on function public.sam_alertes_gel_prevision() from public, anon, authenticated;
+grant execute on function public.sam_alertes_gel_prevision() to service_role;

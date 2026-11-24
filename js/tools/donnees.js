@@ -322,6 +322,8 @@ export async function mount(root, ctx) {
     const state = stationState(station);
     $('donStationName').textContent = station.nom;
     const place = stationPlace(station);
+    // Prévisions = outil Indicateurs : absent de la formule Météo
+    $('donForecast').hidden = !ctx.voitOutils;
     $('donForecast').disabled = !place;
     $('donForecast').title = place
       ? `Prévisions météo à 7 jours à l’emplacement de la station (${place.name})`

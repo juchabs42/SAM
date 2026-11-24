@@ -23,9 +23,9 @@ const dayKeyFormat = new Intl.DateTimeFormat('fr-CA', { timeZone: TZ, year: 'num
 const hourKeyFormat = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 // Formules d'abonnement des comptes « normal » (supabase/formules.sql)
 const FORMULES = {
-  complete: { label: 'Complète', help: 'données des stations, prévisions et les 6 Outils SAM' },
-  meteo: { label: 'Météo', help: 'données des stations, prévisions, cartographie et alertes gel' },
-  outils: { label: 'Outils SAM', help: 'les 6 Outils SAM, sans les données des stations' }
+  complete: { label: 'Complète', help: 'données des stations et les 6 Outils SAM (avec les prévisions)' },
+  meteo: { label: 'Météo', help: 'données des stations, cartographie et alertes gel sur mesure, sans prévisions' },
+  outils: { label: 'Outils SAM', help: 'les 6 Outils SAM avec les prévisions, sans les données des stations' }
 };
 const FORMULE_CHOIX = (name, value) => `<div class="adm-formule-choix">${Object.entries(FORMULES).map(([k, f]) => `<label class="adm-check"><input type="radio" name="${name}" value="${k}"${k === value ? ' checked' : ''}><span><strong>${f.label}</strong> : ${f.help}</span></label>`).join('')}</div>`;
 const dansUnMois = () => {

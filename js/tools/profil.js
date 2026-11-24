@@ -12,7 +12,7 @@ const FIELDS = [
   { id: 'commune', label: 'Commune', type: 'text', autocomplete: 'address-level2', max: 80 }
 ];
 
-const FORMULE_LABEL = { complete: 'complète', meteo: 'Météo (données et prévisions)', outils: 'Outils SAM', terminee: 'terminée' };
+const FORMULE_LABEL = { complete: 'complète', meteo: 'Météo (données des stations)', outils: 'Outils SAM', terminee: 'terminée' };
 
 const TEMPLATE = `
 <div class="pro-main">
@@ -62,7 +62,7 @@ const TEMPLATE = `
   <section class="pro-card" id="proGelCard">
     <header class="pro-card-head">
       <h2>Alertes gel</h2>
-      <p>Deux alertes possibles par station : le soir vers 18 h si la prévision de la nuit descend sous votre seuil, et la nuit dès qu’une mesure de la station passe sous le seuil. Par notification sur votre téléphone et par mail.</p>
+      <p id="proGelIntro">Deux alertes possibles par station : le soir vers 18 h si la prévision de la nuit descend sous votre seuil, et la nuit dès qu’une mesure de la station passe sous le seuil. Par notification sur votre téléphone et par mail.</p>
     </header>
     <div id="proGel" aria-live="polite"><p class="pro-muted">Chargement…</p></div>
   </section>
@@ -322,6 +322,7 @@ export async function mount(root, ctx) {
   async function chargerGel() {
     // Alertes gel : partie météo de la formule seulement
     if (!supa || !ctx.voitStations) { $('proGelCard').hidden = true; return; }
+    if (!ctx.voitOutils) $('proGelIntro').textContent = 'Une alerte dès qu’une mesure de la station passe sous votre seuil, par notification sur votre téléphone et par mail. L’alerte du soir sur la prévision de la nuit fait partie des Outils SAM (formule Complète).';
     const [alertes, , sub] = await Promise.all([
       supa.from('alertes_gel').select('*').eq('user_id', ctx.user?.id).order('cree_le'),
       ctx.stations.store.load().catch(() => []),
@@ -343,6 +344,8 @@ export async function mount(root, ctx) {
     const nom = id => stations.find(st => st.id === id)?.nom || ctx.stations.store.list.find(st => st.id === id)?.nom || id;
     const libres = stations.filter(st => !alertes.some(a => a.station_id === st.id));
     const peutAjouter = libres.length > 0;
+    // Prévision du soir : réservée aux formules avec les Outils SAM (formule Météo : mesures seulement)
+    const avecPrevision = ctx.voitOutils;
     const note = message ? `<p class="sam-form-message${isError ? ' is-error' : ''}" role="status">${escapeHtml(message)}</p>` : '';
     const appareil = !pushPossible()
       ? `<p class="pro-muted">${iphoneSansAppli() ? 'Sur iPhone, les notifications demandent d’installer SAM : bouton Partager de Safari, « Sur l’écran d’accueil », puis ouvrez SAM depuis son icône et revenez ici.' : 'Ce navigateur ne reçoit pas les notifications : les alertes arriveront par mail.'}</p>`
@@ -355,7 +358,7 @@ export async function mount(root, ctx) {
         <li data-alerte="${escapeHtml(a.id)}">
           <div class="pro-gel-titre"><strong>${escapeHtml(nom(a.station_id))}</strong><span>seuil ${escapeHtml(fmtSeuil(a.seuil))}</span></div>
           <div class="pro-gel-options">
-            <label class="sam-check"><input type="checkbox" data-champ="prevision"${a.prevision ? ' checked' : ''}><span>Prévision du soir</span></label>
+            ${avecPrevision ? `<label class="sam-check"><input type="checkbox" data-champ="prevision"${a.prevision ? ' checked' : ''}><span>Prévision du soir</span></label>` : ''}
             <label class="sam-check"><input type="checkbox" data-champ="mesure"${a.mesure ? ' checked' : ''}><span>Mesure de la station</span></label>
             <label class="sam-check"><input type="checkbox" data-champ="par_notification"${a.par_notification ? ' checked' : ''}><span>Notification</span></label>
             <label class="sam-check"><input type="checkbox" data-champ="par_mail"${a.par_mail ? ' checked' : ''}><span>Mail</span></label>
