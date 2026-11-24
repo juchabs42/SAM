@@ -401,3 +401,18 @@
   .tool-admin .adm-nudge { flex-wrap: wrap; }
   .tool-admin .adm-tabs button .adm-tab-badge { min-width: 18px; height: 18px; padding: 0 5px; }
 }
+
+/* Formule d'abonnement (comptes « normal ») */
+.tool-admin .adm-formule { margin: 0; padding: 12px 14px; border: 1px solid var(--sam-line); border-radius: 12px; }
+.tool-admin .adm-formule legend { padding: 0 6px; color: var(--sam-ink-2); font-size: .88rem; font-weight: 700; }
+.tool-admin .adm-formule-choix { display: grid; gap: 6px; }
+.tool-admin .adm-formule-choix .adm-check { padding: 8px 12px; border: 1px solid var(--sam-line); border-radius: 10px; cursor: pointer; }
+.tool-admin .adm-formule-choix .adm-check:has(input:checked) { border-color: var(--sam-red-700); background: #fff1f2; }
+.tool-admin .adm-formule-fin { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 10px; }
+.tool-admin .adm-formule-fin .adm-field { flex: 1 1 200px; }
+.tool-admin .adm-formule .adm-hint { margin: 8px 0 0; }
+.tool-admin .adm-formule-tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: #eef1f5; color: var(--sam-ink-2); font-size: .74rem; font-weight: 600; }
+.tool-admin .adm-formule-tag.is-meteo { background: #e7f1fb; color: #1d4f7a; }
+.tool-admin .adm-formule-tag.is-outils { background: #e5f4e4; color: #23602c; }
+.tool-admin .adm-formule-tag.is-terminee { background: #fbebeb; color: #9b1c1c; }
+.tool-admin .adm-alerte { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: #fbebeb; color: #9b1c1c; font-size: .88rem; line-height: 1.45; }

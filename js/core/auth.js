@@ -13,6 +13,12 @@ export const auth = {
   isAdmin: false,
   /** full admin : comptes, stations, capteurs, fiches stations. */
   isFullAdmin: false,
+  /** Formule : 'complete', 'meteo' (Données, Cartographie), 'outils' (Outils SAM) ou 'terminee'. */
+  formule: 'complete',
+  /** Date de fin d'accès (formule Découverte), 'AAAA-MM-JJ' ou null. */
+  accesJusqu: null,
+  voitStations: true,
+  voitOutils: true,
   ready: false,
   configured: false,
   /** Lien reçu par mail : 'recovery' (mot de passe oublié), 'invite' (invitation), etc. */
@@ -82,15 +88,35 @@ async function checkRole() {
   }
 }
 
+// Formule d'abonnement (supabase/formules.sql). Fonction absente : formule complète.
+async function checkFormule() {
+  if (!auth.client || !auth.user) return { formule: 'complete', acces_jusqu: null };
+  try {
+    const { data, error } = await withTimeout(auth.client.rpc('sam_formule'), 8000);
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    return ['complete', 'meteo', 'outils', 'terminee'].includes(row?.formule) ? row : { formule: 'complete', acces_jusqu: null };
+  } catch (error) {
+    if (!(error?.code === 'PGRST202' || /sam_formule/.test(error?.message || ''))) console.warn('Formule illisible', error);
+    return { formule: 'complete', acces_jusqu: null };
+  }
+}
+
 async function applySession(session) {
   const previousId = auth.user?.id || null;
   const previousRole = auth.role;
+  const previousFormule = auth.formule;
   auth.user = session?.user || null;
-  auth.role = auth.user ? await checkRole() : 'normal';
+  const [role, formule] = auth.user ? await Promise.all([checkRole(), checkFormule()]) : ['normal', { formule: 'complete', acces_jusqu: null }];
+  auth.role = role;
   auth.isAdmin = auth.role === 'admin' || auth.role === 'full';
   auth.isFullAdmin = auth.role === 'full';
+  auth.formule = auth.isAdmin ? 'complete' : formule.formule;
+  auth.accesJusqu = auth.isAdmin ? null : formule.acces_jusqu || null;
+  auth.voitStations = auth.formule === 'complete' || auth.formule === 'meteo';
+  auth.voitOutils = auth.formule === 'complete' || auth.formule === 'outils';
   auth.ready = true;
-  if (previousId !== (auth.user?.id || null) || previousRole !== auth.role) {
+  if (previousId !== (auth.user?.id || null) || previousRole !== auth.role || previousFormule !== auth.formule) {
     emitter.emit(auth);
   }
 }

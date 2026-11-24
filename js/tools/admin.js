@@ -21,6 +21,21 @@ const dateTimeFormat = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ, day: '2-
 const shortFormat = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const dayKeyFormat = new Intl.DateTimeFormat('fr-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
 const hourKeyFormat = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+// Formules d'abonnement des comptes « normal » (supabase/formules.sql)
+const FORMULES = {
+  complete: { label: 'Complète', help: 'données des stations, prévisions et les 6 Outils SAM' },
+  meteo: { label: 'Météo', help: 'données des stations, prévisions, cartographie et alertes gel' },
+  outils: { label: 'Outils SAM', help: 'les 6 Outils SAM, sans les données des stations' }
+};
+const FORMULE_CHOIX = (name, value) => `<div class="adm-formule-choix">${Object.entries(FORMULES).map(([k, f]) => `<label class="adm-check"><input type="radio" name="${name}" value="${k}"${k === value ? ' checked' : ''}><span><strong>${f.label}</strong> : ${f.help}</span></label>`).join('')}</div>`;
+const dansUnMois = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  return d.toLocaleDateString('sv-SE');
+};
+const aujourdhui = () => new Date().toLocaleDateString('sv-SE');
+const dateFr = iso => new Date(`${iso}T12:00`).toLocaleDateString('fr-FR');
+
 const fmtDateTime = value => (value ? dateTimeFormat.format(new Date(value)).replace(' ', ' à ') : '—');
 const num = value => (value === null || value === undefined || value === '' || !Number.isFinite(Number(value)) ? null : Number(value));
 
@@ -162,6 +177,15 @@ const TEMPLATE = `
           <option value="full">Full admin : tout, y compris comptes et stations</option>
         </select>
       </label>
+      <fieldset class="adm-formule" id="accFormuleBloc">
+        <legend>Formule</legend>
+        ${FORMULE_CHOIX('accFormule', 'complete')}
+        <div class="adm-formule-fin">
+          <label class="adm-field">Accès jusqu’au (facultatif)<input type="date" id="accJusqu" class="adm-input"></label>
+          <button type="button" class="adm-button is-small" data-decouverte="acc">Découverte : 1 mois</button>
+        </div>
+        <p class="adm-hint">Admin et full admin ont toujours tout. Sans date, l’accès ne s’arrête pas.</p>
+      </fieldset>
       <p class="adm-message" id="accMessage" role="status"></p>
       <div class="adm-dialog-actions">
         <button type="button" class="adm-button" data-close>Annuler</button>
@@ -290,10 +314,12 @@ export async function mount(root, ctx) {
     $('accSummary').textContent = 'Chargement…';
     $('accSetup').classList.add('hidden');
     try {
-      const [data, gel] = await Promise.all([
+      const [data, gel, formules] = await Promise.all([
         callAdmin('list'),
-        supabase.rpc('sam_alertes_gel_comptes').then(({ data: rows, error }) => (error ? null : rows)).catch(() => null)
+        supabase.rpc('sam_alertes_gel_comptes').then(({ data: rows, error }) => (error ? null : rows)).catch(() => null),
+        supabase.from('sam_formules').select('email,formule,acces_jusqu').then(({ data: rows, error }) => (error ? null : rows)).catch(() => null)
       ]);
+      state.formules = formules ? new Map(formules.map(f => [f.email, f])) : null;
       state.gel = gel ? new Map(gel.map(g => [g.user_id, g])) : null;
       state.accounts = data.accounts || [];
       state.accountsError = null;
@@ -379,7 +405,7 @@ export async function mount(root, ctx) {
           return `<tr data-id="${escapeHtml(a.id)}">
             <td data-label="Personne"><div><button type="button" class="adm-lien" data-fiche="${escapeHtml(a.id)}">${escapeHtml(name || a.email)}</button>${name ? `<span class="adm-muted">${escapeHtml(a.email)}</span>` : ''}${self ? '<span class="adm-tag">vous</span>' : ''}</div></td>
             <td data-label="Structure"><div>${escapeHtml(a.structure || '—')}${a.fonction ? `<span class="adm-muted">${escapeHtml(a.fonction)}</span>` : ''}</div></td>
-            <td data-label="Rôle"><div><span class="adm-badge is-${role}" title="${escapeHtml(ROLES[role].help)}">${ROLES[role].label}</span>${a.mfa ? `<span class="adm-mfa" title="Double authentification activée">${icons.lock}<span class="sr-only">Double authentification activée</span></span>` : ''}</div></td>
+            <td data-label="Rôle"><div><span class="adm-badge is-${role}" title="${escapeHtml(ROLES[role].help)}">${ROLES[role].label}</span>${a.mfa ? `<span class="adm-mfa" title="Double authentification activée">${icons.lock}<span class="sr-only">Double authentification activée</span></span>` : ''}${role === 'normal' && state.formules ? formuleResume(a) : ''}</div></td>
             <td data-label="Statut"><div><span class="adm-status is-${status.key}">${status.label}</span>${!a.confirmed && a.invited_at ? `<span class="adm-muted">le ${escapeHtml(fmtDateTime(a.invited_at))}</span>` : ''}</div></td>
             <td data-label="Dernière activité"><div>${derniere ? `${escapeHtml(fmtDateTime(derniere))}<span class="adm-muted">${ago(derniere)}</span>` : 'jamais'}</div></td>
             ${state.gel ? `<td data-label="Alertes gel"><div>${gelResume(state.gel.get(a.id))}</div></td>` : ''}
@@ -387,6 +413,15 @@ export async function mount(root, ctx) {
           </tr>`;
         }).join('')}</tbody>
       </table>`;
+  }
+
+  // Formule d'un compte « normal » (Complète par défaut), date de fin éventuelle
+  const formuleDe = a => state.formules?.get(String(a.email || '').toLowerCase()) || { formule: 'complete', acces_jusqu: null };
+  function formuleResume(a) {
+    const f = formuleDe(a);
+    const fin = f.acces_jusqu;
+    const terminee = fin && fin < aujourdhui();
+    return `<span class="adm-formule-tag is-${terminee ? 'terminee' : f.formule}">${escapeHtml(FORMULES[f.formule]?.label || 'Complète')}</span>${fin ? `<span class="adm-muted">${terminee ? `accès terminé le ${dateFr(fin)}` : `jusqu’au ${dateFr(fin)}`}</span>` : ''}`;
   }
 
   // Alertes gel d'un compte : nombre d'alertes (actives) et d'appareils abonnés aux notifications
@@ -517,6 +552,21 @@ export async function mount(root, ctx) {
         ${self ? '<p class="adm-hint">Vous ne pouvez pas modifier votre propre rôle.</p>' : '<div><button type="button" class="adm-button is-primary" data-fiche-act="role" disabled>Enregistrer le rôle</button></div>'}
       </section>
 
+      ${role === 'normal' && state.formules ? (() => {
+        const f = formuleDe(a);
+        const terminee = f.acces_jusqu && f.acces_jusqu < aujourdhui();
+        return `<section class="adm-fiche-bloc">
+        <h3>Formule</h3>
+        ${terminee ? `<p class="adm-alerte">Accès terminé depuis le ${escapeHtml(dateFr(f.acces_jusqu))} : la personne ne voit plus que son profil et l’aide. Changez ou retirez la date pour rouvrir l’accès.</p>` : ''}
+        ${FORMULE_CHOIX('ficheFormule', f.formule)}
+        <div class="adm-formule-fin">
+          <label class="adm-field">Accès jusqu’au (facultatif)<input type="date" id="ficheJusqu" class="adm-input" value="${escapeHtml(f.acces_jusqu || '')}"></label>
+          <button type="button" class="adm-button is-small" data-decouverte="fiche">Découverte : 1 mois</button>
+        </div>
+        <div><button type="button" class="adm-button is-primary" data-fiche-act="formule">Enregistrer la formule</button></div>
+      </section>`;
+      })() : ''}
+
       <section class="adm-fiche-bloc">
         <h3>Alertes gel</h3>
         <div id="ficheGel"><p class="adm-muted">Chargement…</p></div>
@@ -577,6 +627,22 @@ export async function mount(root, ctx) {
     const button = event.target.closest('[data-fiche-act]');
     if (!button || button.disabled) return;
     const act = button.dataset.ficheAct;
+    if (act === 'formule') {
+      const a = (state.accounts || []).find(x => x.id === ficheId);
+      const formule = $('accFiche').querySelector('input[name="ficheFormule"]:checked')?.value || 'complete';
+      button.disabled = true;
+      try {
+        await enregistrerFormule(a.email, formule, $('ficheJusqu').value || null);
+        ctx.ui.toast(`Formule enregistrée : ${FORMULES[formule].label}${$('ficheJusqu').value ? `, jusqu’au ${dateFr($('ficheJusqu').value)}` : ''}.`);
+        renderAccounts();
+        renderFiche();
+      } catch (error) {
+        ctx.ui.toast(`Formule non enregistrée : ${error.message}`, 6000);
+      } finally {
+        if (button.isConnected) button.disabled = false;
+      }
+      return;
+    }
     const role = $('accFiche').querySelector('input[name="ficheRole"]:checked')?.value;
     // Bouton bloqué pendant l'action (pas de double envoi)
     button.disabled = true;
@@ -611,12 +677,33 @@ export async function mount(root, ctx) {
       $('accTelephone').value = request.telephone || '';
       $('accRole').value = 'normal';
     }
+    majBlocFormule();
     $('accFromRequest').classList.toggle('hidden', !request);
     $('accFromRequest').textContent = request ? `Demande d’accès du ${fmtDateTime(request.cree_le)} : elle sera marquée « traitée » une fois l’invitation envoyée.` : '';
     $('accDialog').showModal();
     $('accEmail').focus();
   }
   $('accInviteBtn').addEventListener('click', () => openInvite());
+  // Formule : comptes « normal » seulement
+  const majBlocFormule = () => { $('accFormuleBloc').hidden = $('accRole').value !== 'normal'; };
+  $('accRole').addEventListener('change', majBlocFormule);
+  $('accDialog').addEventListener('click', event => {
+    if (!event.target.closest('[data-decouverte="acc"]')) return;
+    $('accDialog').querySelector('input[name="accFormule"][value="complete"]').checked = true;
+    $('accJusqu').value = dansUnMois();
+  });
+  $('accFiche').addEventListener('click', event => {
+    if (!event.target.closest('[data-decouverte="fiche"]')) return;
+    $('accFiche').querySelector('input[name="ficheFormule"][value="complete"]').checked = true;
+    $('ficheJusqu').value = dansUnMois();
+  });
+
+  async function enregistrerFormule(email, formule, accesJusqu) {
+    const row = { email: String(email).toLowerCase(), formule, acces_jusqu: accesJusqu || null, maj_le: new Date().toISOString() };
+    const { error } = await supabase.from('sam_formules').upsert(row, { onConflict: 'email' });
+    if (error) throw error;
+    if (state.formules) state.formules.set(row.email, row);
+  }
 
   $('accForm').addEventListener('submit', async event => {
     event.preventDefault();
@@ -639,8 +726,13 @@ export async function mount(root, ctx) {
         role: $('accRole').value,
         redirectTo: appUrl()
       });
+      let formuleErreur = null;
+      if ($('accRole').value === 'normal') {
+        const formule = $('accDialog').querySelector('input[name="accFormule"]:checked')?.value || 'complete';
+        await enregistrerFormule(email, formule, $('accJusqu').value || null).catch(error => { formuleErreur = error; });
+      }
       $('accDialog').close();
-      ctx.ui.toast(`Invitation envoyée à ${email}.`);
+      ctx.ui.toast(formuleErreur ? `Invitation envoyée à ${email}, mais formule non enregistrée (${formuleErreur.message}) : réglez-la dans sa fiche.` : `Invitation envoyée à ${email}.`, formuleErreur ? 7000 : undefined);
       if (state.inviteRequest) await setRequestStatus(state.inviteRequest, 'traitee', { quiet: true });
       state.inviteRequest = null;
       await loadAccounts();

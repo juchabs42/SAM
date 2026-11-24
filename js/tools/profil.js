@@ -12,6 +12,8 @@ const FIELDS = [
   { id: 'commune', label: 'Commune', type: 'text', autocomplete: 'address-level2', max: 80 }
 ];
 
+const FORMULE_LABEL = { complete: 'complète', meteo: 'Météo (données et prévisions)', outils: 'Outils SAM', terminee: 'terminée' };
+
 const TEMPLATE = `
 <div class="pro-main">
   <section class="pro-card pro-account">
@@ -100,7 +102,7 @@ export async function mount(root, ctx) {
       ? 'Full admin — accès complet (comptes, stations, saisie)'
       : ctx.isAdmin
         ? 'Admin — saisie Phénologie, Tavelure, Piégeage'
-        : 'Normal — consultation (lecture seule)';
+        : `Normal — formule ${FORMULE_LABEL[ctx.formule] || 'complète'}${ctx.accesJusqu ? `, jusqu’au ${new Date(`${ctx.accesJusqu}T12:00`).toLocaleDateString('fr-FR')}` : ''}`;
     $('proRole').classList.toggle('is-admin', Boolean(ctx.isAdmin));
   }
 
@@ -318,7 +320,8 @@ export async function mount(root, ctx) {
   }
 
   async function chargerGel() {
-    if (!supa) { $('proGelCard').hidden = true; return; }
+    // Alertes gel : partie météo de la formule seulement
+    if (!supa || !ctx.voitStations) { $('proGelCard').hidden = true; return; }
     const [alertes, , sub] = await Promise.all([
       supa.from('alertes_gel').select('*').eq('user_id', ctx.user?.id).order('cree_le'),
       ctx.stations.store.load().catch(() => []),

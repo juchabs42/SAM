@@ -68,6 +68,10 @@ aux comptes full admin (fonction `sam-alertes`, mode `stations`, tâche `sam-sta
 toutes les 15 minutes), une seule fois par interruption. `supabase/stations_muettes.sql`.
 
 **Page de connexion** : onglets Connexion et Formules (tarifs du réseau, dans `index.html`).
+**Formules** (comptes normal) : Météo (Données, Cartographie, alertes gel), Outils SAM (les 6 outils,
+sans données des stations) ou Complète, avec date de fin facultative (Découverte : passé ce jour, page
+« Accès terminé », profil et aide seulement). Réglées dans Administration > Comptes (invitation, fiche),
+vérifiées dans la base (`sam_acces_stations`, règles des tables des outils). `supabase/formules.sql`.
 **Bandeau Données** : largeur réglable à la souris ou au clavier (240 à 560 px), mémorisée par appareil.
 
 **Pages légales** : `legal/mentions-legales.html`, `legal/confidentialite.html`,
@@ -184,6 +188,7 @@ supabase/demandes_acces.sql  formulaire « Demander un accès » (table + foncti
 supabase/maintenance.sql  purge du journal cron (14 jours), chemins de recherche des fonctions
 supabase/alertes_gel.sql  alertes gel : tables, règles, listes pour la fonction, tâches automatiques
 supabase/stations_muettes.sql  mail aux full admins quand une station se tait 3 h ; alertes gel par compte (administration)
+supabase/formules.sql          formules d'abonnement (Météo, Outils SAM, Complète) et date de fin d'accès
 supabase/functions/sam-alertes/index.ts  envoi des alertes gel (notifications, mails Brevo)
 supabase/activite_comptes.sql  dernière activité réelle des comptes (sessions qui se prolongent seules)
 supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bilan hydrique

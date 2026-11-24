@@ -10,7 +10,7 @@ import { profile } from './profile.js';
 import { stationStore, stationState, stationToWatch } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-24.1';
+const APP_VERSION = '2026-11-24.2';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
@@ -27,10 +27,23 @@ const SECTIONS = [
   { id: 'carte', title: 'Cartographie des stations SAM', section: true },
   { id: 'admin', title: 'Administration SAM', section: true, adminOnly: true },
   { id: 'profil', title: 'Mon profil', section: true },
-  { id: 'aide', title: 'Aide', section: true }
+  { id: 'aide', title: 'Aide', section: true },
+  // Formule Découverte terminée : seule page ouverte avec Mon profil et l'Aide
+  { id: 'acces', title: 'Accès terminé', section: true }
 ];
-/** Page d'accueil de l'application (logo, ouverture, adresse inconnue). */
-const HOME = 'donnees';
+/** Page d'accueil de l'application (logo, ouverture, adresse inconnue), selon la formule du compte. */
+function home() {
+  if (auth.formule === 'terminee') return 'acces';
+  if (auth.voitStations) return 'donnees';
+  return storage.get('lastTool', DEFAULT_TOOL) || DEFAULT_TOOL;
+}
+/** Rubrique ouverte à ce compte (formule : Météo = Données et Cartographie). */
+function sectionAllowed(section) {
+  if (auth.formule === 'terminee') return ['acces', 'profil', 'aide'].includes(section.id);
+  if (section.id === 'acces') return false;
+  if (section.id === 'donnees' || section.id === 'carte') return auth.voitStations;
+  return true;
+}
 /** Premier outil de « Outils SAM » quand aucun n'a encore été ouvert. */
 const DEFAULT_TOOL = 'indicateurs';
 
@@ -309,6 +322,12 @@ function renderAuth() {
   $('sam-perso').title = `${name ? `${name} · ` : ''}${auth.isFullAdmin ? 'compte full admin' : auth.isAdmin ? 'compte admin (saisie)' : 'compte en lecture seule'} — Mon profil`;
   // Onglet « Administration » : visible des seuls « full admin ».
   $('sam-nav-admin').hidden = !auth.isFullAdmin;
+  // Formule : rubriques du compte seulement
+  $('sam-nav-donnees').hidden = !auth.voitStations;
+  $('sam-nav-carte').hidden = !auth.voitStations;
+  $('sam-nav-outils').hidden = !auth.voitOutils;
+  const accueil = auth.voitStations ? '#/donnees' : '#/';
+  document.querySelectorAll('.sam-brand, #sam-top-brand').forEach(link => { link.href = accueil; });
   $('sam-app').classList.toggle('is-admin', Boolean(auth.isFullAdmin));
   updateToolModePill();
   if (activeTool && !activeTool.section) renderToolCards(activeTool.id);
@@ -365,6 +384,8 @@ async function handleLogout() {
 // ---------------------------------------------------------------------------
 /** Outils en aperçu (preview) : réservés aux administrateurs. */
 function toolVisible(tool) {
+  // Formule sans les Outils SAM (Météo, accès terminé)
+  if (!auth.voitOutils) return false;
   if (tool.preview && !auth.isAdmin) return false;
   // Outil remplacé : masqué dès que son remplaçant est visible pour ce compte.
   if (tool.replacedBy) {
@@ -602,6 +623,11 @@ function createContext(tool, root) {
     /** full admin : comptes, stations, capteurs, fiches stations. */
     get isFullAdmin() { return auth.isFullAdmin; },
     get role() { return auth.role; },
+    /** Formule du compte : 'complete', 'meteo', 'outils' ou 'terminee' ; date de fin éventuelle. */
+    get formule() { return auth.formule; },
+    get accesJusqu() { return auth.accesJusqu; },
+    get voitStations() { return auth.voitStations; },
+    get voitOutils() { return auth.voitOutils; },
     onAuthChange(fn) { track(auth.onChange(() => { if (!disposed) fn(auth); })); },
     location: {
       get: () => places.current,
@@ -661,7 +687,7 @@ function destroyDetachedCharts() {
 
 function routeFromHash() {
   const id = (window.location.hash || '').replace(/^#\/?/, '').split(/[/?]/)[0];
-  return TOOLS.find(t => t.id === id && toolVisible(t)) || SECTIONS.find(t => t.id === id) || null;
+  return TOOLS.find(t => t.id === id && toolVisible(t)) || SECTIONS.find(t => t.id === id && sectionAllowed(t)) || null;
 }
 
 /** Outil qui remplace un outil masqué (ancien lien ou dernier outil mémorisé), s'il est visible. */
@@ -760,7 +786,9 @@ function handleRoute() {
   if (!tool) {
     // Adresse vide, outil inconnu ou retiré : ancien lien redirigé, sinon l'accueil (Données).
     const asked = (window.location.hash || '').replace(/^#\/?/, '').split(/[/?]/)[0];
-    window.location.replace(`#/${replacementOf(asked) || HOME}`);
+    const next = replacementOf(asked) || home();
+    if (asked === next) return;
+    window.location.replace(`#/${next}`);
     return;
   }
   if (TOOLS.includes(tool)) storage.set('lastTool', tool.id);
@@ -916,7 +944,11 @@ export function startShell() {
 
   // Compte
   renderAuth();
-  auth.onChange(() => renderAuth());
+  auth.onChange(() => {
+    renderAuth();
+    // Formule ou rôle changé : la page ouverte n'est peut-être plus permise
+    if (activeTool && !routeFromHash()) handleRoute();
+  });
   // Points à traiter (full admin) : redemandés par l'administration, et toutes les 10 minutes.
   window.addEventListener('sam:attention', () => refreshAttention(true));
   setInterval(() => { if (document.visibilityState === 'visible') refreshAttention(true); }, 10 * 60 * 1000);

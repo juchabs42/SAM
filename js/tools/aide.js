@@ -34,6 +34,7 @@ const TEMPLATE = `
 
   <section class="aid-card">
     <h2>Mon compte</h2>
+    ${q('Que comprend ma formule ?', '<p>Votre formule figure dans <a href="#/profil">Mon profil</a>. <strong>Météo</strong> : données des stations, prévisions, cartographie et alertes gel. <strong>Outils SAM</strong> : indicateurs agroclimatiques, programmation et bilan de l’irrigation, suivis phénologie, tavelure et piégeage. <strong>Complète</strong> : les deux. Pour changer de formule, écrivez à l’équipe SudExpé.</p>')}
     ${q('J’ai oublié mon mot de passe', '<p>Sur la page de connexion, touchez « Mot de passe oublié ? » et indiquez votre adresse : un lien arrive par mail pour en choisir un nouveau (pensez aux indésirables). Une fois connecté, vous le changez dans <a href="#/profil">Mon profil</a>.</p>')}
     ${q('Qu’est-ce que la double authentification ?', '<p>Une protection en plus du mot de passe : à chaque connexion, SAM demande un code à 6 chiffres affiché par une application de votre téléphone (Google Authenticator, Microsoft Authenticator…). Elle s’active dans <a href="#/profil">Mon profil</a>. Téléphone perdu ou changé : un administrateur SAM la retire de votre compte, puis vous la réactivez.</p>')}
     ${q('Installer SAM sur mon téléphone', '<p>SAM s’installe comme une application, sans passer par un magasin d’applications. Sur Android, touchez « Installer » en haut de l’écran ou dans le menu ⋮ de Chrome. Sur iPhone, dans Safari : bouton Partager, puis « Sur l’écran d’accueil ». L’application se met à jour toute seule.</p>')}

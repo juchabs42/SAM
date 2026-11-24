@@ -1,0 +1,18 @@
+/* Accès terminé */
+.tool-acces .acc-carte {
+  max-width: 640px;
+  padding: 26px 28px;
+  border: 1px solid var(--sam-line);
+  border-radius: var(--sam-radius);
+  background: #fff;
+  box-shadow: var(--sam-shadow-sm);
+}
+.tool-acces h2 { margin: 0 0 12px; font-size: 1.2rem; }
+.tool-acces p { margin: 0 0 12px; color: var(--sam-ink-2); line-height: 1.55; }
+.tool-acces .acc-formules { display: grid; gap: 8px; margin: 0 0 14px; padding: 0; list-style: none; }
+.tool-acces .acc-formules li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--sam-line); border-radius: 10px; color: var(--sam-ink-2); font-size: .93rem; }
+.tool-acces .acc-formules strong { color: var(--sam-ink); }
+.tool-acces .acc-formules span { color: var(--sam-red-700); font-weight: 700; white-space: nowrap; }
+.tool-acces .acc-note { font-size: .88rem; }
+.tool-acces .acc-contact { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; }
+@media (max-width: 600px) { .tool-acces .acc-carte { padding: 20px 18px; } }
