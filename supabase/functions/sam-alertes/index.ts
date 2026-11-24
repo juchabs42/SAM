@@ -6,6 +6,8 @@
 //                     suivie vient de mesurer une température sous le seuil choisi ;
 //   - « prevision » : chaque soir vers 18 h : la prévision Open-Meteo de la nuit, au point
 //                     de la station, descend sous le seuil.
+//   - « stations »  : toutes les 15 minutes : une station se tait depuis plus de 3 heures,
+//                     mail aux comptes « full admin » (supabase/stations_muettes.sql).
 // Et par le site (compte connecté) : « test » envoie une alerte d'essai au compte appelant.
 //
 // Réglages :
@@ -88,10 +90,10 @@ async function envoyerNotif(admin: Any, userId: string, message: { title: string
 const echappe = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
 
 /** Mail par Brevo (si la clé est réglée). */
-async function envoyerMail(to: string, sujet: string, lignes: string[]) {
+const PIED_GEL = 'Alerte réglée dans SAM, Mon profil > Alertes gel. https://sam.juju-chabat42.workers.dev/#/profil';
+async function envoyerMail(to: string, sujet: string, lignes: string[], pied = PIED_GEL) {
   const cle = Deno.env.get('BREVO_CLE');
   if (!cle || !expediteur || !to) return false;
-  const pied = 'Alerte réglée dans SAM, Mon profil > Alertes gel. https://sam.juju-chabat42.workers.dev/#/profil';
   const html = `<div style="font-family:Arial,sans-serif;font-size:15px;color:#1e2126;line-height:1.5">
     <p style="margin:0 0 12px;font-size:18px;font-weight:bold;color:#a20117">${echappe(sujet)}</p>
     ${lignes.map(l => `<p style="margin:0 0 8px">${echappe(l)}</p>`).join('')}
@@ -170,6 +172,30 @@ async function prevision(admin: Any) {
   return { alertes: (data ?? []).length, envoyees: faites.length };
 }
 
+// Stations muettes depuis plus de 3 heures : un mail aux « full admin », une fois par interruption
+async function stations(admin: Any) {
+  const { data, error } = await admin.rpc('sam_stations_muettes');
+  if (error) throw error;
+  const liste = data ?? [];
+  if (!liste.length) return { stations: 0, envoyes: 0 };
+  const { data: dest, error: e2 } = await admin.rpc('sam_full_admins_mails');
+  if (e2) throw e2;
+  const quand = (iso: string) => new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const titre = liste.length === 1
+    ? `SAM : la station ${liste[0].station_nom} ne transmet plus`
+    : `SAM : ${liste.length} stations ne transmettent plus`;
+  const lignes = [
+    ...liste.map((s: Any) => `${s.station_nom} : dernière mesure le ${quand(s.derniere_mesure)}.`),
+    'Aucune mesure reçue depuis plus de 3 heures. Vous ne recevrez pas d\'autre mail pour ces stations avant qu\'elles aient retransmis.'
+  ];
+  const pied = 'Mail envoyé aux comptes « full admin » de SAM. Détail : https://sam.juju-chabat42.workers.dev/#/admin';
+  let envoyes = 0;
+  for (const d of dest ?? []) if (await envoyerMail(d.email, titre, lignes, pied)) envoyes++;
+  // Marquées même sans mail envoyé : pas de rattrapage en rafale si la clé Brevo arrive plus tard
+  await admin.rpc('sam_stations_muettes_marquer', { p_ids: liste.map((s: Any) => s.station_id) });
+  return { stations: liste.length, envoyes };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   try {
@@ -184,6 +210,7 @@ Deno.serve(async (req: Request) => {
     if (cle && recue && recue === cle) {
       if (body?.mode === 'mesures') return reply(await mesures(admin));
       if (body?.mode === 'prevision') return reply(await prevision(admin));
+      if (body?.mode === 'stations') return reply(await stations(admin));
       return reply({ error: 'Mode inconnu.' }, 400);
     }
 

@@ -63,6 +63,13 @@ Envoi par la fonction Supabase `sam-alertes` : notification (Web Push, clés cr�
 `sam_private.reglages`) et mail via Brevo (secret `BREVO_CLE` de la fonction ; adresse d'envoi
 `mail_expediteur` dans `sam_private.reglages`, à valider dans Brevo). `supabase/alertes_gel.sql`.
 
+**Stations muettes** : une station posée et active sans mesure depuis 3 heures déclenche un mail
+aux comptes full admin (fonction `sam-alertes`, mode `stations`, tâche `sam-stations-muettes`
+toutes les 15 minutes), une seule fois par interruption. `supabase/stations_muettes.sql`.
+
+**Page de connexion** : onglets Connexion et Formules (tarifs du réseau, dans `index.html`).
+**Bandeau Données** : largeur réglable à la souris ou au clavier (240 à 560 px), mémorisée par appareil.
+
 **Pages légales** : `legal/mentions-legales.html`, `legal/confidentialite.html`,
 `legal/conditions.html` (pages statiques, lisibles sans connexion), liées depuis la page de
 connexion, le pied de page et l'Aide.
@@ -176,6 +183,7 @@ supabase/double_authentification.sql  code à 6 chiffres exigé pour les droits 
 supabase/demandes_acces.sql  formulaire « Demander un accès » (table + fonction publique contrôlée)
 supabase/maintenance.sql  purge du journal cron (14 jours), chemins de recherche des fonctions
 supabase/alertes_gel.sql  alertes gel : tables, règles, listes pour la fonction, tâches automatiques
+supabase/stations_muettes.sql  mail aux full admins quand une station se tait 3 h ; alertes gel par compte (administration)
 supabase/functions/sam-alertes/index.ts  envoi des alertes gel (notifications, mails Brevo)
 supabase/activite_comptes.sql  dernière activité réelle des comptes (sessions qui se prolongent seules)
 supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bilan hydrique

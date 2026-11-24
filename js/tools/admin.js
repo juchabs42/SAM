@@ -290,7 +290,11 @@ export async function mount(root, ctx) {
     $('accSummary').textContent = 'Chargement…';
     $('accSetup').classList.add('hidden');
     try {
-      const data = await callAdmin('list');
+      const [data, gel] = await Promise.all([
+        callAdmin('list'),
+        supabase.rpc('sam_alertes_gel_comptes').then(({ data: rows, error }) => (error ? null : rows)).catch(() => null)
+      ]);
+      state.gel = gel ? new Map(gel.map(g => [g.user_id, g])) : null;
       state.accounts = data.accounts || [];
       state.accountsError = null;
       state.activite = data.activite_disponible;
@@ -365,7 +369,7 @@ export async function mount(root, ctx) {
     const meId = ctx.user?.id;
     $('accList').innerHTML = `
       <table class="adm-table">
-        <thead><tr><th>Personne</th><th>Structure</th><th>Rôle</th><th>Statut</th><th>Dernière activité</th><th><span class="sr-only">Fiche</span></th></tr></thead>
+        <thead><tr><th>Personne</th><th>Structure</th><th>Rôle</th><th>Statut</th><th>Dernière activité</th>${state.gel ? '<th>Alertes gel</th>' : ''}<th><span class="sr-only">Fiche</span></th></tr></thead>
         <tbody>${shown.map(a => {
           const status = accountStatus(a);
           const name = [a.prenom, a.nom].filter(Boolean).join(' ');
@@ -378,10 +382,18 @@ export async function mount(root, ctx) {
             <td data-label="Rôle"><div><span class="adm-badge is-${role}" title="${escapeHtml(ROLES[role].help)}">${ROLES[role].label}</span>${a.mfa ? `<span class="adm-mfa" title="Double authentification activée">${icons.lock}<span class="sr-only">Double authentification activée</span></span>` : ''}</div></td>
             <td data-label="Statut"><div><span class="adm-status is-${status.key}">${status.label}</span>${!a.confirmed && a.invited_at ? `<span class="adm-muted">le ${escapeHtml(fmtDateTime(a.invited_at))}</span>` : ''}</div></td>
             <td data-label="Dernière activité"><div>${derniere ? `${escapeHtml(fmtDateTime(derniere))}<span class="adm-muted">${ago(derniere)}</span>` : 'jamais'}</div></td>
+            ${state.gel ? `<td data-label="Alertes gel"><div>${gelResume(state.gel.get(a.id))}</div></td>` : ''}
             <td class="adm-cell-actions"><button type="button" class="adm-button is-small" data-fiche="${escapeHtml(a.id)}">Fiche utilisateur</button></td>
           </tr>`;
         }).join('')}</tbody>
       </table>`;
+  }
+
+  // Alertes gel d'un compte : nombre d'alertes (actives) et d'appareils abonnés aux notifications
+  function gelResume(g) {
+    if (!g || !g.alertes) return '<span class="adm-muted">aucune</span>';
+    const pause = g.alertes - g.actives;
+    return `${g.alertes} station${g.alertes > 1 ? 's' : ''}${pause ? `<span class="adm-muted">dont ${pause} en pause</span>` : ''}<span class="adm-muted">${g.appareils ? `${g.appareils} appareil${g.appareils > 1 ? 's' : ''} pour les notifications` : 'aucun appareil pour les notifications'}</span>`;
   }
 
   async function accountAction(id, act, newRole) {
@@ -506,8 +518,8 @@ export async function mount(root, ctx) {
       </section>
 
       <section class="adm-fiche-bloc">
-        <h3>Accès aux données réservées des stations</h3>
-        <div id="ficheStations">${role === 'normal' ? '<p class="adm-muted">Chargement…</p>' : '<p class="adm-muted">Les rôles admin et full admin voient toutes les données de toutes les stations.</p>'}</div>
+        <h3>Alertes gel</h3>
+        <div id="ficheGel"><p class="adm-muted">Chargement…</p></div>
       </section>
 
       <section class="adm-fiche-bloc">
@@ -526,24 +538,37 @@ export async function mount(root, ctx) {
         <div><button type="button" class="adm-button is-danger" data-fiche-act="delete">Supprimer le compte</button></div>
       </section>`}
       <div class="adm-dialog-actions"><button type="button" class="adm-button" data-fiche-fermer>Fermer</button></div>`;
-    if (role === 'normal') chargerAccesStations(a.id);
+    chargerAlertesGel(a.id);
   }
 
-  // Stations dont les données réservées (météo, irrigation) sont ouvertes à ce compte
-  async function chargerAccesStations(id) {
-    const box = $('ficheStations');
+  // Alertes gel réglées par ce compte (Mon profil > Alertes gel)
+  async function chargerAlertesGel(id) {
+    const box = $('ficheGel');
+    const fr = v => Number(v).toLocaleString('fr-FR', { maximumFractionDigits: 1 }).replace('-', '−');
     try {
-      const { data, error } = await supabase.from('station_acces').select('station_id,meteo,irrigation').eq('user_id', id);
+      const { data, error } = await supabase.from('alertes_gel')
+        .select('station_id,seuil,prevision,mesure,par_mail,par_notification,actif,derniere_alerte_mesure,derniere_alerte_prevision')
+        .eq('user_id', id);
       if (error) throw error;
       if (ficheId !== id || !box.isConnected) return;
-      const lignes = (data || []).filter(g => g.meteo || g.irrigation)
-        .map(g => ({ nom: nomStation(g.station_id), quoi: [g.meteo ? 'météo' : '', g.irrigation ? 'irrigation' : ''].filter(Boolean).join(' et ') }))
-        .sort((x, y) => x.nom.localeCompare(y.nom, 'fr'));
-      box.innerHTML = lignes.length
-        ? `<ul class="adm-fiche-liste">${lignes.map(l => `<li><strong>${escapeHtml(l.nom)}</strong> : données ${escapeHtml(l.quoi)}</li>`).join('')}</ul><p class="adm-hint">En plus des stations ouvertes à tous. Se règle dans l’onglet Stations.</p>`
-        : '<p class="adm-muted">Aucun accès particulier : la personne voit les stations ouvertes à tous. Se règle dans l’onglet Stations.</p>';
+      const g = state.gel?.get(id);
+      const appareils = g ? (g.appareils ? `${g.appareils} appareil${g.appareils > 1 ? 's' : ''} abonné${g.appareils > 1 ? 's' : ''} aux notifications.` : 'Aucun appareil abonné aux notifications : seuls les mails peuvent partir.') : '';
+      const lignes = (data || []).map(x => ({ ...x, nom: nomStation(x.station_id) })).sort((x, y) => x.nom.localeCompare(y.nom, 'fr'));
+      if (!lignes.length) {
+        box.innerHTML = '<p class="adm-muted">Aucune alerte gel réglée.</p>';
+        return;
+      }
+      box.innerHTML = `<ul class="adm-fiche-liste">${lignes.map(x => {
+        const quand = [x.prevision ? 'prévision du soir' : '', x.mesure ? 'mesure' : ''].filter(Boolean).join(' et ') || 'aucun déclenchement';
+        const canal = [x.par_notification ? 'notification' : '', x.par_mail ? 'mail' : ''].filter(Boolean).join(' et ') || 'aucun envoi';
+        const derniere = [
+          x.derniere_alerte_mesure ? `sur mesure le ${fmtDateTime(x.derniere_alerte_mesure)}` : '',
+          x.derniere_alerte_prevision ? `sur prévision le ${new Date(`${x.derniere_alerte_prevision}T12:00`).toLocaleDateString('fr-FR')}` : ''
+        ].filter(Boolean).join(', ');
+        return `<li><strong>${escapeHtml(x.nom)}</strong> : seuil ${escapeHtml(fr(x.seuil))} °C, ${escapeHtml(quand)}, par ${escapeHtml(canal)}${x.actif ? '' : ' <span class="adm-tag">en pause</span>'}${derniere ? `<span class="adm-muted"> · dernière alerte ${escapeHtml(derniere)}</span>` : ''}</li>`;
+      }).join('')}</ul>${appareils ? `<p class="adm-hint">${escapeHtml(appareils)}</p>` : ''}`;
     } catch {
-      if (ficheId === id && box.isConnected) box.innerHTML = '<p class="adm-muted">Accès par station pas encore configurés (supabase/acces_stations.sql).</p>';
+      if (ficheId === id && box.isConnected) box.innerHTML = '<p class="adm-muted">Alertes gel illisibles pour le moment.</p>';
     }
   }
 

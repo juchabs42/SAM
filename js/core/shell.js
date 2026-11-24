@@ -10,7 +10,7 @@ import { profile } from './profile.js';
 import { stationStore, stationState, stationToWatch } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-23.4';
+const APP_VERSION = '2026-11-24.1';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
@@ -229,8 +229,56 @@ async function useMyPosition(button) {
 }
 
 // ---------------------------------------------------------------------------
-// Bandeau : repli (ordinateur) et tiroir (téléphone)
+// Bandeau : largeur réglable (ordinateur), repli (ordinateur) et tiroir (téléphone)
 // ---------------------------------------------------------------------------
+const SIDEBAR_W = { min: 240, max: 560, base: 294 };
+function setSidebarWidth(width, save = true) {
+  const w = Math.round(Math.min(SIDEBAR_W.max, Math.max(SIDEBAR_W.min, width)));
+  document.documentElement.style.setProperty('--sam-sidebar-w', `${w}px`);
+  const handle = $('sam-sidebar-resize');
+  handle.setAttribute('aria-valuenow', String(w));
+  handle.setAttribute('aria-valuemin', String(SIDEBAR_W.min));
+  handle.setAttribute('aria-valuemax', String(SIDEBAR_W.max));
+  handle.setAttribute('aria-valuetext', `${w} pixels`);
+  if (save) storage.set('sidebarWidth', w);
+  return w;
+}
+function initSidebarResize() {
+  const handle = $('sam-sidebar-resize');
+  const saved = Number(storage.get('sidebarWidth', SIDEBAR_W.base));
+  setSidebarWidth(Number.isFinite(saved) ? saved : SIDEBAR_W.base, false);
+  const current = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sam-sidebar-w')) || SIDEBAR_W.base;
+  // Les graphiques suivent la nouvelle largeur une fois le geste terminé.
+  const done = () => window.dispatchEvent(new Event('resize'));
+  handle.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    const left = $('sam-sidebar').getBoundingClientRect().left;
+    document.body.classList.add('is-resizing-sidebar');
+    const move = e => setSidebarWidth(e.clientX - left);
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      document.body.classList.remove('is-resizing-sidebar');
+      done();
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+  handle.addEventListener('dblclick', () => { setSidebarWidth(SIDEBAR_W.base); done(); });
+  handle.addEventListener('keydown', event => {
+    const step = event.shiftKey ? 48 : 16;
+    const keys = { ArrowLeft: -step, ArrowRight: step, Home: SIDEBAR_W.min - current(), End: SIDEBAR_W.max - current() };
+    if (!(event.key in keys)) return;
+    event.preventDefault();
+    setSidebarWidth(current() + keys[event.key]);
+    done();
+  });
+}
+
 function setCollapsed(collapsed) {
   $('sam-app').classList.toggle('is-collapsed', collapsed);
   storage.set('sidebarCollapsed', collapsed);
@@ -858,6 +906,7 @@ export function startShell() {
   $('sam-collapse').addEventListener('click', () => setCollapsed(true));
   $('sam-expand').addEventListener('click', () => setCollapsed(false));
   if (storage.get('sidebarCollapsed', false)) $('sam-app').classList.add('is-collapsed');
+  initSidebarResize();
   $('sam-burger').addEventListener('click', () => ($('sam-app').classList.contains('drawer-open') ? closeDrawer() : openDrawer()));
   $('sam-drawer-backdrop').addEventListener('click', closeDrawer);
 

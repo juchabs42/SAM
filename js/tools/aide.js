@@ -18,7 +18,7 @@ const TEMPLATE = `
   <section class="aid-card">
     <h2>Données des stations</h2>
     ${q('À quelle fréquence les données arrivent-elles ?', '<p>Les stations mesurent en continu et envoient une valeur par heure. SAM les récupère toutes les 30 minutes : la dernière mesure a donc en général moins d’une heure et demie.</p>')}
-    ${q('Pourquoi certaines données d’une station ne s’affichent pas ?', '<p>Deux raisons possibles : la station n’a pas ce capteur (pas de pluviomètre, par exemple), ou ses données météo ou irrigation sont réservées aux comptes choisis par son propriétaire. Pour obtenir un accès, écrivez à l’équipe SudExpé.</p>')}
+    ${q('Pourquoi certaines données d’une station ne s’affichent pas ?', '<p>Deux raisons possibles : la station n’a pas ce capteur (pas de pluviomètre, par exemple), ou ses données d’irrigation sont réservées aux comptes choisis par son propriétaire (les données météo sont partagées avec tout le réseau). Pour obtenir un accès, écrivez à l’équipe SudExpé.</p>')}
     ${q('Comment garder mes stations en haut de la liste ?', '<p>Dans l’onglet Données, touchez l’étoile à côté du nom d’une station : elle rejoint vos favoris, en tête de liste, et s’ouvre par défaut.</p>')}
     ${q('Une station ne transmet plus : que faire ?', `<p>Le point de couleur à côté de son nom indique son état (vert : elle transmet). L’équipe SudExpé est prévenue des stations muettes ; si le problème dure, écrivez à <a href="mailto:${CONTACT}?subject=SAM%20%3A%20station%20muette">${CONTACT}</a>.</p>`)}
   </section>

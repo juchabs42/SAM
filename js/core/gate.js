@@ -3,8 +3,8 @@
 import { auth, signIn, signOut, sendPasswordReset, updatePassword, authErrorMessage, mfaRequired, verifyMfa, requestAccess } from './auth.js';
 
 const $ = id => document.getElementById(id);
-const VIEWS = ['login', 'reset', 'request', 'mfa', 'password'];
-const FOCUS = { login: 'sam-gate-email', reset: 'sam-gate-reset-email', request: 'sam-req-prenom', mfa: 'sam-gate-mfa-code', password: 'sam-gate-new' };
+const VIEWS = ['login', 'formules', 'reset', 'request', 'mfa', 'password'];
+const FOCUS = { formules: 'sam-gate-tab-formules', login: 'sam-gate-email', reset: 'sam-gate-reset-email', request: 'sam-req-prenom', mfa: 'sam-gate-mfa-code', password: 'sam-gate-new' };
 
 function setMessage(id, text = '', isError = false) {
   const el = $(id);
@@ -14,6 +14,14 @@ function setMessage(id, text = '', isError = false) {
 
 function showView(name) {
   VIEWS.forEach(view => { $(`sam-gate-${view}-view`).hidden = view !== name; });
+  // Onglets Connexion / Formules : visibles sur ces deux pages seulement
+  const tabs = name === 'login' || name === 'formules';
+  $('sam-gate-tabs').hidden = !tabs;
+  ['login', 'formules'].forEach(tab => {
+    const button = $(`sam-gate-tab-${tab}`);
+    button.setAttribute('aria-selected', String(tab === name));
+    button.tabIndex = tab === name ? 0 : -1;
+  });
   setTimeout(() => {
     const field = $(FOCUS[name]);
     if (name === 'login' && field.value) $('sam-gate-password').focus();
@@ -145,6 +153,18 @@ export function runGate({ mode = 'login', message = '' } = {}) {
         submit.disabled = false;
       }
     };
+
+    // Onglets Connexion / Formules (flèches gauche-droite au clavier)
+    $('sam-gate-tab-login').onclick = () => showView('login');
+    $('sam-gate-tab-formules').onclick = () => showView('formules');
+    $('sam-gate-tabs').onkeydown = event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const next = $('sam-gate-formules-view').hidden ? 'formules' : 'login';
+      showView(next);
+      $(`sam-gate-tab-${next}`).focus();
+    };
+    $('sam-gate-formules-request').onclick = () => $('sam-gate-request').click();
 
     // Demande d'accès : formulaire public, enregistré dans Supabase (Administration > Comptes).
     $('sam-gate-request').onclick = () => {

@@ -15,7 +15,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="css/app.css?v=2026-11-23.4">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-24.1">
 </head>
 <body>
   <!-- Écran de connexion : l'application n'est accessible qu'aux comptes SAM -->
@@ -23,7 +23,12 @@
     <main class="sam-gate-card">
       <img class="sam-gate-logo" src="assets/img/logo-sam-rouge.webp" alt="SAM — Sud Agro Météo" width="176" height="104">
 
-      <section class="sam-gate-view" id="sam-gate-login-view">
+      <div class="sam-gate-tabs" id="sam-gate-tabs" role="tablist" aria-label="Connexion ou formules">
+        <button type="button" role="tab" id="sam-gate-tab-login" aria-controls="sam-gate-login-view" aria-selected="true">Connexion</button>
+        <button type="button" role="tab" id="sam-gate-tab-formules" aria-controls="sam-gate-formules-view" aria-selected="false" tabindex="-1">Formules</button>
+      </div>
+
+      <section class="sam-gate-view" id="sam-gate-login-view" role="tabpanel" aria-labelledby="sam-gate-tab-login">
         <h1>Connexion</h1>
         <p class="sam-gate-text">Accès réservé aux comptes SAM créés par l’équipe SudExpé.</p>
         <form class="sam-gate-form" id="sam-gate-login" novalidate>
@@ -37,6 +42,35 @@
           <p>Pas encore de compte ?</p>
           <button class="sam-button sam-gate-request-button" type="button" id="sam-gate-request">Demander un accès</button>
         </div>
+      </section>
+
+      <section class="sam-gate-view" id="sam-gate-formules-view" role="tabpanel" aria-labelledby="sam-gate-tab-formules" hidden>
+        <h1>Formules</h1>
+        <p class="sam-gate-text">Abonnement annuel au réseau Sud Agro Météo : données des stations, prévisions et outils SAM.</p>
+        <ul class="sam-formules">
+          <li class="sam-formule">
+            <div class="sam-formule-tete"><h2>Organisation de producteurs</h2><p class="sam-formule-prix">15 €<span> par hectare déclaré par l’OP</span></p></div>
+            <p>Accès complet : un compte pour l’OP, et un compte pour chaque producteur qui héberge une station sur son exploitation.</p>
+          </li>
+          <li class="sam-formule">
+            <div class="sam-formule-tete"><h2>Producteur avec station(s) en propre</h2><p class="sam-formule-prix">150 €<span> par station</span></p></div>
+            <p>Accès complet et un compte producteur.</p>
+          </li>
+          <li class="sam-formule">
+            <div class="sam-formule-tete"><h2>Indépendant, sans station ni OP</h2></div>
+            <ul class="sam-formule-options">
+              <li><span><strong>Météo</strong> : données du réseau et prévisions</span><span class="sam-formule-prix">80 €</span></li>
+              <li><span><strong>Outils</strong> : bilan irrigation, indicateurs, suivis</span><span class="sam-formule-prix">80 €</span></li>
+              <li><span><strong>Complète</strong> : météo + outils</span><span class="sam-formule-prix">150 €</span></li>
+            </ul>
+          </li>
+          <li class="sam-formule is-decouverte">
+            <div class="sam-formule-tete"><h2>Découverte</h2><p class="sam-formule-prix">Gratuit</p></div>
+            <p>Accès complet pendant 1 mois, une fois par exploitation.</p>
+          </li>
+        </ul>
+        <p class="sam-gate-note">Tarifs par an. Les données météo des stations sont partagées entre tous les membres du réseau.</p>
+        <button class="sam-button sam-gate-request-button sam-formules-demande" type="button" id="sam-gate-formules-request">Demander un accès</button>
       </section>
 
       <section class="sam-gate-view" id="sam-gate-reset-view" hidden>
@@ -115,6 +149,7 @@
 
   <div class="sam-app" id="sam-app" hidden>
     <aside class="sam-sidebar" id="sam-sidebar" aria-label="Stations du réseau SAM">
+      <div class="sam-sidebar-resize" id="sam-sidebar-resize" role="separator" aria-orientation="vertical" aria-controls="sam-sidebar" aria-label="Largeur du bandeau des stations" tabindex="0" title="Glisser pour élargir ou réduire le bandeau (double-clic : largeur d’origine)"></div>
       <div class="sam-sidebar-inner">
         <a class="sam-brand" href="#/donnees" aria-label="SAM — Sud Agro Météo">
           <img src="assets/img/logo-sam-blanc.webp" alt="SAM — Sud Agro Météo" width="210" height="124">
@@ -238,6 +273,6 @@
   <script src="config.js"></script>
   <script src="assets/vendor/supabase-2.118.0.js"></script>
   <script src="assets/vendor/chart-4.4.7.umd.js"></script>
-  <script type="module" src="js/main.js?v=2026-11-23.4"></script>
+  <script type="module" src="js/main.js?v=2026-11-24.1"></script>
 </body>
 </html>

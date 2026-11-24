@@ -110,6 +110,33 @@ img { max-width: 100%; }
   scrollbar-color: rgba(255,255,255,.3) transparent;
 }
 .sam-app.is-collapsed .sam-sidebar-inner { visibility: hidden; }
+/* Poignée de largeur du bandeau (ordinateur) */
+.sam-sidebar-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sam-sidebar-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 3px;
+  background: transparent;
+  transition: background .15s;
+}
+.sam-sidebar-resize:hover::after,
+.sam-sidebar-resize:focus-visible::after,
+.is-resizing-sidebar .sam-sidebar-resize::after { background: rgba(255,255,255,.55); }
+.sam-sidebar-resize:focus-visible { outline: none; }
+.sam-app.is-collapsed .sam-sidebar-resize { display: none; }
+body.is-resizing-sidebar { cursor: col-resize; user-select: none; }
 
 .sam-brand { display: block; width: 214px; margin: 2px 0 20px 6px; }
 .sam-brand img { display: block; width: 100%; height: auto; }
@@ -669,6 +696,27 @@ body.is-gated { background: var(--sam-red-900); }
 .sam-gate-request-button { width: 100%; min-height: 46px; border-color: var(--sam-red-700); color: var(--sam-red-700); }
 .sam-gate-request-button:hover { background: #fff5f6; border-color: var(--sam-red-800); }
 .sam-gate-card:has(#sam-gate-request-view:not([hidden])) { width: min(520px, 100%); }
+.sam-gate-card:has(#sam-gate-formules-view:not([hidden])) { width: min(600px, 100%); }
+/* Onglets Connexion / Formules */
+.sam-gate-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 0 0 20px; padding: 4px; border-radius: 12px; background: #f2f3f5; }
+.sam-gate-tabs[hidden] { display: none; }
+.sam-gate-tabs button { min-height: 40px; border: 0; border-radius: 9px; background: transparent; color: var(--sam-muted); font: inherit; font-weight: 600; cursor: pointer; }
+.sam-gate-tabs button:hover { color: var(--sam-ink, #1e2126); }
+.sam-gate-tabs button[aria-selected="true"] { background: #fff; color: var(--sam-red-700); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.sam-gate-tabs button:focus-visible { outline: 2px solid var(--sam-red-700); outline-offset: 2px; }
+/* Formules (page de connexion) */
+.sam-formules { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.sam-formule { padding: 14px 16px; border: 1px solid var(--sam-line); border-radius: 12px; }
+.sam-formule.is-decouverte { border-style: dashed; background: #fafbfc; }
+.sam-formule-tete { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
+.sam-formule h2 { margin: 0; font-size: 1rem; }
+.sam-formule > p { margin: 6px 0 0; color: var(--sam-muted); font-size: .88rem; line-height: 1.45; }
+.sam-formule-prix { margin: 0; color: var(--sam-red-700); font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
+.sam-formule-prix span { color: var(--sam-muted); font-weight: 400; font-size: .82rem; }
+.sam-formule-options { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.sam-formule-options li { display: flex; justify-content: space-between; gap: 12px; padding-top: 6px; border-top: 1px solid var(--sam-line); color: var(--sam-muted); font-size: .88rem; }
+.sam-formule-options strong { color: var(--sam-ink, #1e2126); }
+.sam-formules-demande { margin-top: 14px; }
 .sam-gate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .sam-gate-form .sam-field select { min-height: 46px; font-size: 1rem; }
 .sam-gate-trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
@@ -867,6 +915,7 @@ body.is-gated { background: var(--sam-red-900); }
 
 @media (max-width: 1100px) {
   .sam-app, .sam-app.has-sidebar, .sam-app.has-sidebar.is-collapsed { grid-template-columns: minmax(0, 1fr); background: var(--sam-bg); }
+  .sam-sidebar-resize { display: none; }
   .sam-app .sam-top-brand { display: inline-flex; }
   .sam-sidebar {
     position: fixed;
