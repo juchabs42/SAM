@@ -195,6 +195,7 @@ supabase/alertes_gel.sql  alertes gel : tables, règles, listes pour la fonction
 supabase/stations_muettes.sql  mail aux full admins quand une station se tait 3 h ; alertes gel par compte (administration)
 supabase/formules.sql          formules d'abonnement (Météo, Outils SAM, Complète) et date de fin d'accès
 supabase/conseillers.sql       rôle Conseiller et groupes de stations (comparaison dans Données)
+supabase/gel_releve_rapide.sql relevé Comsag toutes les 5 min des stations en alerte gel (≤ 4 °C)
 supabase/functions/sam-alertes/index.ts  envoi des alertes gel (notifications, mails Brevo)
 supabase/activite_comptes.sql  dernière activité réelle des comptes (sessions qui se prolongent seules)
 supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bilan hydrique

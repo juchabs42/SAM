@@ -308,6 +308,25 @@ export async function mount(root, ctx) {
     others: hide.size ? Object.fromEntries(Object.entries(row.autres || {}).filter(([code]) => !hide.has(code))) : row.autres || {}
   });
 
+  /** Mesures par créneau horaire. Plusieurs envois dans l'heure (alerte gel Comsag : toutes
+   *  les 5 minutes sous 3 °C) : pluie additionnée, autres valeurs = dernière reçue. */
+  function slotMap(rows) {
+    const map = new Map();
+    rows.forEach(row => {
+      const key = Math.floor(row.at.getTime() / HOUR);
+      const prev = map.get(key);
+      if (!prev) { map.set(key, row); return; }
+      map.set(key, {
+        at: row.at,
+        t: row.t ?? prev.t,
+        hr: row.hr ?? prev.hr,
+        rain: row.rain === null && prev.rain === null ? null : (prev.rain || 0) + (row.rain || 0),
+        others: { ...prev.others, ...row.others }
+      });
+    });
+    return map;
+  }
+
   async function loadStationData() {
     const station = selected();
     const p = ctx.period.get();
@@ -397,7 +416,7 @@ export async function mount(root, ctx) {
     if (mode === 'hourly') {
       const start = parisInstant(p.start).getTime();
       const end = Math.min(parisInstant(p.end, true).getTime(), Date.now());
-      const bySlot = new Map(hourly.map(row => [Math.floor(row.at.getTime() / HOUR), row]));
+      const bySlot = slotMap(hourly);
       const items = [];
       for (let s = Math.floor(start / HOUR); s <= Math.floor(end / HOUR); s += 1) {
         const at = new Date(s * HOUR);
@@ -906,7 +925,7 @@ export async function mount(root, ctx) {
     if (mode === 'daily') return { main: days, days, daily };
     const start = parisInstant(p.start).getTime();
     const end = Math.min(parisInstant(p.end, true).getTime(), Date.now());
-    const slots = new Map(stations.map(st => [st.id, new Map((groupData.hourly.get(st.id) || []).map(r => [Math.floor(r.at.getTime() / HOUR), r]))]));
+    const slots = new Map(stations.map(st => [st.id, slotMap(groupData.hourly.get(st.id) || [])]));
     const items = [];
     for (let s0 = Math.floor(start / HOUR); s0 <= Math.floor(end / HOUR); s0 += 1) {
       const at = new Date(s0 * HOUR);
@@ -1025,7 +1044,7 @@ export async function mount(root, ctx) {
         ].filter(Boolean);
       });
       const hourCols = cols.filter(c => c.get);
-      const slots = new Map(stations.map(st => [st.id, new Map((groupData.hourly.get(st.id) || []).map(r => [Math.floor(r.at.getTime() / HOUR), r]))]));
+      const slots = new Map(stations.map(st => [st.id, slotMap(groupData.hourly.get(st.id) || [])]));
       const allSlots = [...new Set([...slots.values()].flatMap(m => [...m.keys()]))].sort((a, b) => a - b);
       const horaire = [['Date', 'Heure', ...hourCols.map(c => c.head)], ...allSlots.map(s0 => {
         const at = new Date(s0 * HOUR);
