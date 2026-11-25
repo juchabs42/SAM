@@ -142,10 +142,7 @@ const TEMPLATE = `
         <div class="adm-bar">
           <div>
             <h2>Noms des capteurs</h2>
-            <p class="adm-sub">Libellés et unités, communs à toutes les stations. La case « Affiché » vaut pour la station choisie : décochez un capteur absent ou hors service (station sans pluviomètre…) pour le retirer de ses données.</p>
-          </div>
-          <div class="adm-actions">
-            <label class="adm-field-inline">Station <select id="capDicStation" class="adm-input"></select></label>
+            <p class="adm-sub">Libellés et unités, communs à toutes les stations. La case « Affiché » vaut pour la station choisie dans l’encart Capteurs ci-dessus : décochez un capteur absent ou hors service (station sans pluviomètre…) pour le retirer de ses données.</p>
           </div>
         </div>
         <p class="adm-hint" id="capMaskHint"></p>
@@ -1030,7 +1027,6 @@ export async function mount(root, ctx) {
     }
     const options = stations.map(s => `<option value="${escapeHtml(s.id)}"${s.id === state.capStation ? ' selected' : ''}>${escapeHtml(s.nom)}${(s.capteurs || []).length ? '' : ' (aucune mesure)'}</option>`).join('');
     $('capStation').innerHTML = options;
-    $('capDicStation').innerHTML = options;
     $('capPeriod').value = String(storage.get('admin.capPeriod', 7));
     renderDictionary();
     await loadSensorData();
@@ -1161,18 +1157,16 @@ export async function mount(root, ctx) {
     });
   }
 
-  // Les deux listes « Station » de l'onglet (mesures brutes, noms des capteurs) restent alignées.
+  // La station choisie dans l'encart Capteurs vaut aussi pour les noms des capteurs (case « Affiché »).
   function selectCapStation(id) {
     state.capStation = id;
     storage.set('admin.capStation', id);
     state.capSensors = null;
     $('capStation').value = id;
-    $('capDicStation').value = id;
     renderDictionary();
     loadSensorData();
   }
   $('capStation').addEventListener('change', () => selectCapStation($('capStation').value));
-  $('capDicStation').addEventListener('change', () => selectCapStation($('capDicStation').value));
   $('capPeriod').addEventListener('change', () => {
     storage.set('admin.capPeriod', Number($('capPeriod').value));
     loadSensorData();
