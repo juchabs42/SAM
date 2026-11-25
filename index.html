@@ -15,7 +15,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="preload" href="assets/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="css/app.css?v=2026-11-25.1">
+  <link rel="stylesheet" href="css/app.css?v=2026-11-25.2">
 </head>
 <body>
   <!-- Écran de connexion : l'application n'est accessible qu'aux comptes SAM -->
@@ -155,6 +155,13 @@
           <img src="assets/img/logo-sam-blanc.webp" alt="SAM — Sud Agro Météo" width="210" height="124">
         </a>
 
+        <div class="sam-groups" id="sam-groups" hidden>
+          <div class="sam-side-title"><span data-icon="folder"></span>Mes groupes</div>
+          <ul class="sam-group-list" id="sam-groups-list" aria-label="Mes groupes de stations"></ul>
+          <p class="sam-side-hint hidden" id="sam-groups-hint">Réunissez des stations proches pour comparer leurs courbes.</p>
+          <button class="sam-side-more sam-group-new" id="sam-groups-new" type="button"><span>Nouveau groupe</span><span data-icon="plus"></span></button>
+        </div>
+
         <div class="sam-side-title"><span data-icon="station"></span>Stations</div>
         <p class="sam-side-empty" id="sam-stations-status">Chargement…</p>
         <ul class="sam-stations" id="sam-stations-fav" aria-label="Stations favorites"></ul>
@@ -273,6 +280,6 @@
   <script src="config.js"></script>
   <script src="assets/vendor/supabase-2.118.0.js"></script>
   <script src="assets/vendor/chart-4.4.7.umd.js"></script>
-  <script type="module" src="js/main.js?v=2026-11-25.1"></script>
+  <script type="module" src="js/main.js?v=2026-11-25.2"></script>
 </body>
 </html>

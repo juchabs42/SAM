@@ -7,7 +7,7 @@ const emitter = createEmitter();
 export const auth = {
   client: null,
   user: null,
-  /** Rôle : 'normal' (lecture), 'admin' (saisie Phéno, Tavelure, Piégeage), 'full' (tout). */
+  /** Rôle : 'normal' (lecture), 'conseiller' (lecture + groupes de stations), 'admin' (saisie Phéno, Tavelure, Piégeage), 'full' (tout). */
   role: 'normal',
   /** admin ou full admin : saisie dans Phénologie, Tavelure, Piégeage. */
   isAdmin: false,
@@ -18,6 +18,8 @@ export const auth = {
   /** Date de fin d'accès (formule Découverte), 'AAAA-MM-JJ' ou null. */
   accesJusqu: null,
   voitStations: true,
+  /** Groupes de stations (onglet Données) : conseiller, admin, full admin. */
+  peutGrouper: false,
   voitOutils: true,
   ready: false,
   configured: false,
@@ -68,7 +70,7 @@ function withTimeout(promise, ms) {
 
 async function rpcRole() {
   const { data, error } = await withTimeout(auth.client.rpc('sam_role'), 8000);
-  if (!error) return ['full', 'admin'].includes(data) ? data : 'normal';
+  if (!error) return ['full', 'admin', 'conseiller'].includes(data) ? data : 'normal';
   // Fonction absente (roles.sql pas encore exécuté) : ancien contrôle, tout administrateur = full admin.
   if (error.code === 'PGRST202' || /sam_role/.test(error.message || '')) {
     const legacy = await withTimeout(auth.client.rpc('is_sam_admin'), 8000);
@@ -111,8 +113,10 @@ async function applySession(session) {
   auth.role = role;
   auth.isAdmin = auth.role === 'admin' || auth.role === 'full';
   auth.isFullAdmin = auth.role === 'full';
-  auth.formule = auth.isAdmin ? 'complete' : formule.formule;
-  auth.accesJusqu = auth.isAdmin ? null : formule.acces_jusqu || null;
+  const complet = auth.isAdmin || auth.role === 'conseiller';
+  auth.peutGrouper = complet;
+  auth.formule = complet ? 'complete' : formule.formule;
+  auth.accesJusqu = complet ? null : formule.acces_jusqu || null;
   auth.voitStations = auth.formule === 'complete' || auth.formule === 'meteo';
   auth.voitOutils = auth.formule === 'complete' || auth.formule === 'outils';
   auth.ready = true;

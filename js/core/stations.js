@@ -8,7 +8,9 @@ const HOUR = 3600000;
 const LATE_HOURS = 3;
 const SILENT_HOURS = 48;
 const emitter = createEmitter();
-const state = { list: [], loaded: false, loading: null, error: null, selectedId: null };
+const state = { list: [], loaded: false, loading: null, error: null, selectedId: null, groupes: [], selectedGroupId: null };
+/** Nombre maximal de stations dans un groupe (couleurs bien distinctes sur les graphiques). */
+export const GROUP_MAX = 8;
 
 /** État de transmission d'une station. */
 export function stationState(station) {
@@ -37,6 +39,12 @@ export const stationStore = {
   /** Table à lire pour les mesures : la vue filtrée selon les droits du compte quand elle existe. */
   get mesuresTable() { return state.mesures || 'station_mesures'; },
   get selected() { return state.list.find(s => s.id === state.selectedId) || null; },
+  /** Groupes de stations du compte (conseiller, admin, full admin), dans l'ordre de création. */
+  get groupes() { return state.groupes; },
+  get selectedGroupId() { return state.selectedGroupId; },
+  get selectedGroup() { return state.groupes.find(g => g.id === state.selectedGroupId) || null; },
+  /** Stations d'un groupe visibles par le compte, dans l'ordre du groupe. */
+  groupStations(group) { return (group?.stations || []).map(id => state.list.find(s => s.id === id)).filter(Boolean); },
   onChange: fn => emitter.on(fn),
 
   async load(force = false) {
@@ -58,6 +66,7 @@ export const stationStore = {
           acces: map ? { meteo: Boolean(map.get(station.id)?.meteo), irrigation: Boolean(map.get(station.id)?.irrigation) } : { meteo: true, irrigation: true }
         }));
         state.mesures = map ? 'station_mesures_visibles' : 'station_mesures';
+        await stationStore.loadGroups();
         state.loaded = true;
         state.error = null;
       })().catch(error => {
@@ -94,9 +103,54 @@ export const stationStore = {
   },
 
   select(id) {
-    if (!id || id === state.selectedId) return;
+    if (!id || (id === state.selectedId && !state.selectedGroupId)) return;
     state.selectedId = id;
+    state.selectedGroupId = null;
     emitter.emit({ type: 'select', id });
+  },
+
+  // -------------------------------------------------------------------------
+  // Groupes de stations (supabase/conseillers.sql) : personnels, 8 stations au plus
+  // -------------------------------------------------------------------------
+  async loadGroups() {
+    if (!auth.peutGrouper || !auth.client) { state.groupes = []; state.selectedGroupId = null; return state.groupes; }
+    const { data, error } = await auth.client.from('groupes_stations').select('*').order('ordre').order('cree_le');
+    state.groupes = error ? [] : (data || []).map(g => ({ ...g, id: String(g.id) }));
+    if (state.selectedGroupId && !state.groupes.some(g => g.id === state.selectedGroupId)) state.selectedGroupId = null;
+    return state.groupes;
+  },
+
+  selectGroup(id) {
+    id = id ? String(id) : null;
+    if (!id || id === state.selectedGroupId) return;
+    state.selectedGroupId = id;
+    emitter.emit({ type: 'group', id });
+  },
+
+  /** Crée ou modifie un groupe ; renvoie le groupe enregistré. */
+  async saveGroup({ id, nom, stations }) {
+    const row = { nom: String(nom || '').trim().slice(0, 60), stations: [...new Set(stations)].slice(0, GROUP_MAX), maj_le: new Date().toISOString() };
+    const query = id
+      ? auth.client.from('groupes_stations').update(row).eq('id', id).select().single()
+      : auth.client.from('groupes_stations').insert({ ...row, ordre: state.groupes.length }).select().single();
+    const { data: row0, error } = await query;
+    if (error) throw error;
+    const data = { ...row0, id: String(row0.id) };
+    const i = state.groupes.findIndex(g => g.id === data.id);
+    if (i >= 0) state.groupes[i] = data; else state.groupes.push(data);
+    emitter.emit({ type: id ? 'groups' : 'group-created', id: data.id });
+    if (state.selectedGroupId === data.id) emitter.emit({ type: 'group', id: data.id });
+    return data;
+  },
+
+  async deleteGroup(id) {
+    const { error } = await auth.client.from('groupes_stations').delete().eq('id', id);
+    if (error) throw error;
+    state.groupes = state.groupes.filter(g => g.id !== id);
+    const wasSelected = state.selectedGroupId === id;
+    if (wasSelected) state.selectedGroupId = null;
+    emitter.emit({ type: 'groups' });
+    if (wasSelected) emitter.emit({ type: 'select', id: state.selectedId });
   },
 
   /** Met à jour une station après modification (fiche station). */

@@ -102,6 +102,7 @@ export async function mount(root, ctx) {
       ? 'Full admin — accès complet (comptes, stations, saisie)'
       : ctx.isAdmin
         ? 'Admin — saisie Phénologie, Tavelure, Piégeage'
+        : ctx.role === 'conseiller' ? 'Conseiller — formule complète et groupes de stations'
         : `Normal — formule ${FORMULE_LABEL[ctx.formule] || 'complète'}${ctx.accesJusqu ? `, jusqu’au ${new Date(`${ctx.accesJusqu}T12:00`).toLocaleDateString('fr-FR')}` : ''}`;
     $('proRole').classList.toggle('is-admin', Boolean(ctx.isAdmin));
   }

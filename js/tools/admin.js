@@ -169,7 +169,8 @@ const TEMPLATE = `
       <p class="adm-hint hidden" id="accFromRequest"></p>
       <label class="adm-field">Rôle
         <select id="accRole" class="adm-input">
-          <option value="normal">Normal : consultation (producteurs, techniciens)</option>
+          <option value="normal">Normal : consultation (producteurs)</option>
+          <option value="conseiller">Conseiller : formule complète et groupes de stations (conseillers techniques d’OP)</option>
           <option value="admin">Admin : saisie Phénologie, Tavelure, Piégeage (collègues SudExpé)</option>
           <option value="full">Full admin : tout, y compris comptes et stations</option>
         </select>
@@ -181,7 +182,7 @@ const TEMPLATE = `
           <label class="adm-field">Accès jusqu’au (facultatif)<input type="date" id="accJusqu" class="adm-input"></label>
           <button type="button" class="adm-button is-small" data-decouverte="acc">Découverte : 1 mois</button>
         </div>
-        <p class="adm-hint">Admin et full admin ont toujours tout. Sans date, l’accès ne s’arrête pas.</p>
+        <p class="adm-hint">Conseiller, admin et full admin ont toujours tout. Sans date, l’accès ne s’arrête pas.</p>
       </fieldset>
       <p class="adm-message" id="accMessage" role="status"></p>
       <div class="adm-dialog-actions">
@@ -355,7 +356,8 @@ export async function mount(root, ctx) {
 
   // Rôles : l'ancienne réponse de la fonction (champ « admin » seul) compte comme full admin.
   const ROLES = {
-    normal: { label: 'Normal', help: 'consultation seule (producteurs, techniciens).' },
+    normal: { label: 'Normal', help: 'consultation seule, selon sa formule (producteurs).' },
+    conseiller: { label: 'Conseiller', help: 'consultation en formule complète, plus des groupes de stations pour comparer leurs courbes (conseillers techniques d’OP).' },
     admin: { label: 'Admin', help: 'saisie dans Phénologie, Tavelure et Piégeage, rien de plus.' },
     full: { label: 'Full admin', help: 'accès complet : comptes, stations, capteurs, fiches stations et saisie.' }
   };
@@ -376,7 +378,7 @@ export async function mount(root, ctx) {
       : list;
     const count = role => list.filter(a => roleOf(a) === role).length;
     const pending = list.filter(a => !a.confirmed).length;
-    $('accSummary').textContent = `${list.length} compte${list.length > 1 ? 's' : ''} · ${count('full')} full admin · ${count('admin')} admin · ${count('normal')} normal${pending ? ` · ${pending} invitation${pending > 1 ? 's' : ''} en attente` : ''}`;
+    $('accSummary').textContent = `${list.length} compte${list.length > 1 ? 's' : ''} · ${count('full')} full admin · ${count('admin')} admin · ${count('conseiller')} conseiller${count('conseiller') > 1 ? 's' : ''} · ${count('normal')} normal${pending ? ` · ${pending} invitation${pending > 1 ? 's' : ''} en attente` : ''}`;
     // Sans la mise à jour, Supabase ne donne que la dernière saisie du mot de passe
     const hint = $('accActiviteHint');
     hint.classList.toggle('hidden', state.activite === true);

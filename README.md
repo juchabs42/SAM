@@ -67,6 +67,11 @@ Envoi par la fonction Supabase `sam-alertes` : notification (Web Push, clés cr�
 aux comptes full admin (fonction `sam-alertes`, mode `stations`, tâche `sam-stations-muettes`
 toutes les 15 minutes), une seule fois par interruption. `supabase/stations_muettes.sql`.
 
+**Rôle Conseiller** (conseillers techniques d'OP) : formule Complète et groupes de stations personnels
+(« Mes groupes » en tête du bandeau Données, 2 à 8 stations) : tableau des stations, courbes de
+température et d'humidité, pluie par jour et cumulée, une couleur par station, export Excel.
+Admin et full admin ont aussi les groupes. `supabase/conseillers.sql`.
+
 **Page de connexion** : onglets Connexion et Formules (tarifs du réseau, dans `index.html`).
 **Formules** (comptes normal) : Météo (Données, Cartographie, alertes gel), Outils SAM (les 6 outils,
 sans données des stations) ou Complète, avec date de fin facultative (Découverte : passé ce jour, page
@@ -189,6 +194,7 @@ supabase/maintenance.sql  purge du journal cron (14 jours), chemins de recherche
 supabase/alertes_gel.sql  alertes gel : tables, règles, listes pour la fonction, tâches automatiques
 supabase/stations_muettes.sql  mail aux full admins quand une station se tait 3 h ; alertes gel par compte (administration)
 supabase/formules.sql          formules d'abonnement (Météo, Outils SAM, Complète) et date de fin d'accès
+supabase/conseillers.sql       rôle Conseiller et groupes de stations (comparaison dans Données)
 supabase/functions/sam-alertes/index.ts  envoi des alertes gel (notifications, mails Brevo)
 supabase/activite_comptes.sql  dernière activité réelle des comptes (sessions qui se prolongent seules)
 supabase/suppression_bilan_hydrique.sql  suppression des données de l'ancien Bilan hydrique

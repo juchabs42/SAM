@@ -7,10 +7,10 @@ import { auth, signOut } from './auth.js';
 import { places, searchPlaces, locateMe, placeLabel } from './places.js';
 import { period } from './period.js';
 import { profile } from './profile.js';
-import { stationStore, stationState, stationToWatch } from './stations.js';
+import { stationStore, stationState, stationToWatch, GROUP_MAX } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-25.1';
+const APP_VERSION = '2026-11-25.2';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
@@ -89,12 +89,12 @@ function setModePill(text = '', kind = '') {
 // ---------------------------------------------------------------------------
 // Bandeau de gauche : stations du réseau (onglet Données)
 // ---------------------------------------------------------------------------
-const sideState = { showOthers: null };
+const sideState = { showOthers: null, openGroups: new Set() };
 
 function stationItem(station) {
   const state = stationState(station);
   const isFavorite = profile.favorites().includes(station.id);
-  const isCurrent = station.id === stationStore.selectedId;
+  const isCurrent = station.id === stationStore.selectedId && !stationStore.selectedGroupId;
   return `<li class="sam-station${isCurrent ? ' is-current' : ''}" data-station-id="${escapeHtml(station.id)}">
     <button class="sam-station-select" type="button" data-action="select" title="${escapeHtml(`${station.nom} — ${state.label}`)}"${isCurrent ? ' aria-current="true"' : ''}>
       <i class="sam-dot is-${state.key}" aria-hidden="true"></i><span>${escapeHtml(station.nom)}</span>
@@ -103,7 +103,136 @@ function stationItem(station) {
   </li>`;
 }
 
+// Groupes de stations (conseiller, admin, full admin) : en tête du bandeau, dépliables.
+function groupItem(group) {
+  const stations = stationStore.groupStations(group);
+  const isCurrent = group.id === stationStore.selectedGroupId;
+  const open = isCurrent || sideState.openGroups.has(group.id);
+  return `<li class="sam-group${isCurrent ? ' is-current' : ''}" data-group-id="${escapeHtml(group.id)}">
+    <div class="sam-station sam-group-head${isCurrent ? ' is-current' : ''}">
+      <button class="sam-station-select" type="button" data-action="group-select" title="${escapeHtml(`${group.nom} — comparer ${stations.length} station${stations.length > 1 ? 's' : ''}`)}"${isCurrent ? ' aria-current="true"' : ''}>
+        ${icons.folder}<span>${escapeHtml(group.nom)}</span><small class="sam-group-count">${stations.length}</small>
+      </button>
+      <button class="sam-place-star sam-group-toggle" type="button" data-action="group-toggle" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} ${escapeHtml(group.nom)}" title="${open ? 'Replier' : 'Voir les stations du groupe'}">${icons.chevronDown}</button>
+      <button class="sam-place-star" type="button" data-action="group-edit" aria-label="Modifier le groupe ${escapeHtml(group.nom)}" title="Modifier le groupe">${icons.edit}</button>
+    </div>
+    <ul class="sam-stations sam-group-stations"${open ? '' : ' hidden'}>${stations.map(stationItem).join('') || '<li class="sam-side-empty">Aucune station</li>'}</ul>
+  </li>`;
+}
+
+function renderGroups() {
+  const box = $('sam-groups');
+  box.hidden = !auth.peutGrouper || !stationStore.loaded || Boolean(stationStore.error);
+  if (box.hidden) return;
+  const groups = stationStore.groupes;
+  $('sam-groups-list').innerHTML = groups.map(groupItem).join('');
+  $('sam-groups-hint').classList.toggle('hidden', groups.length > 0);
+}
+
+let groupDialog = null;
+function openGroupDialog(group = null) {
+  if (!groupDialog) {
+    groupDialog = document.createElement('dialog');
+    groupDialog.className = 'sam-dialog sam-group-dialog';
+    groupDialog.setAttribute('aria-labelledby', 'sam-group-title');
+    document.body.appendChild(groupDialog);
+  }
+  const all = [...stationStore.list].filter(st => st.installee !== false || (group?.stations || []).includes(st.id))
+    .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+  const chosen = new Set(group?.stations || []);
+  groupDialog.innerHTML = `<form class="sam-group-form" method="dialog" novalidate>
+    <div class="sam-dialog-head">
+      <div><p class="sam-kicker">Groupe de stations</p><h2 id="sam-group-title">${group ? 'Modifier le groupe' : 'Nouveau groupe'}</h2></div>
+      <button class="sam-icon-button" type="button" data-group-close aria-label="Fermer">${icons.close}</button>
+    </div>
+    <label class="sam-field">Nom du groupe<input id="sam-group-nom" type="text" maxlength="60" required placeholder="Bassin de Mogio, Nîmes…" value="${escapeHtml(group?.nom || '')}"></label>
+    <fieldset class="sam-group-choix">
+      <legend>Stations <span id="sam-group-compte"></span></legend>
+      <div class="sam-group-liste">${all.map(st => `<label class="sam-check"><input type="checkbox" value="${escapeHtml(st.id)}"${chosen.has(st.id) ? ' checked' : ''}><span>${escapeHtml(st.nom)}${st.commune ? ` <small>${escapeHtml(st.commune)}</small>` : ''}</span></label>`).join('')}</div>
+    </fieldset>
+    <p class="sam-form-message" id="sam-group-message" role="status"></p>
+    <div class="sam-group-actions">
+      ${group ? '<button class="sam-button sam-group-suppr" type="button" data-group-delete>Supprimer</button>' : '<span></span>'}
+      <div><button class="sam-button" type="button" data-group-close>Annuler</button>
+      <button class="sam-button sam-button-primary" type="submit">Enregistrer</button></div>
+    </div>
+  </form>`;
+  const form = groupDialog.querySelector('form');
+  const boxes = () => [...form.querySelectorAll('.sam-group-liste input')];
+  const message = (text, error = true) => {
+    const el = form.querySelector('#sam-group-message');
+    el.textContent = text;
+    el.classList.toggle('is-error', error);
+  };
+  const majCompte = () => {
+    const n = boxes().filter(b => b.checked).length;
+    form.querySelector('#sam-group-compte').textContent = `(${n} / ${GROUP_MAX})`;
+    boxes().forEach(b => { b.disabled = !b.checked && n >= GROUP_MAX; });
+  };
+  majCompte();
+  form.addEventListener('change', majCompte);
+  form.querySelectorAll('[data-group-close]').forEach(b => b.addEventListener('click', () => groupDialog.close()));
+  form.querySelector('[data-group-delete]')?.addEventListener('click', async event => {
+    if (!window.confirm(`Supprimer le groupe « ${group.nom} » ? Les stations ne sont pas touchées.`)) return;
+    event.currentTarget.disabled = true;
+    try {
+      await stationStore.deleteGroup(group.id);
+      groupDialog.close();
+      toast(`Groupe « ${group.nom} » supprimé.`);
+    } catch (error) {
+      message(`Suppression impossible : ${error.message}`);
+      event.currentTarget.disabled = false;
+    }
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const nom = form.querySelector('#sam-group-nom').value.trim();
+    const stations = boxes().filter(b => b.checked).map(b => b.value);
+    if (!nom) { message('Donnez un nom au groupe.'); form.querySelector('#sam-group-nom').focus(); return; }
+    if (stations.length < 2) { message('Choisissez au moins 2 stations à comparer.'); return; }
+    const submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      const saved = await stationStore.saveGroup({ id: group?.id, nom, stations });
+      groupDialog.close();
+      toast(group ? `Groupe « ${saved.nom} » enregistré.` : `Groupe « ${saved.nom} » créé.`);
+      stationStore.selectGroup(saved.id);
+      closeDrawer();
+    } catch (error) {
+      message(`Enregistrement impossible : ${error.message}`);
+      submit.disabled = false;
+    }
+  });
+  groupDialog.showModal();
+  form.querySelector('#sam-group-nom').focus();
+}
+
+function handleGroupListClick(event) {
+  const button = event.target.closest('button[data-action]');
+  const item = event.target.closest('[data-group-id]');
+  if (!button || !item) return;
+  const action = button.dataset.action;
+  if (!action.startsWith('group-')) return; // stations du groupe : bandeau habituel
+  const id = item.dataset.groupId;
+  if (action === 'group-select') {
+    sideState.openGroups.add(id);
+    stationStore.selectGroup(id);
+    closeDrawer();
+  } else if (action === 'group-toggle') {
+    if (sideState.openGroups.has(id) || id === stationStore.selectedGroupId) sideState.openGroups.delete(id);
+    else sideState.openGroups.add(id);
+    // Groupe ouvert à l'écran : on ne le replie que dans le bandeau
+    const list = item.querySelector('.sam-group-stations');
+    const open = list.hidden;
+    list.hidden = !open;
+    button.setAttribute('aria-expanded', String(open));
+  } else if (action === 'group-edit') {
+    openGroupDialog(stationStore.groupes.find(g => g.id === id));
+  }
+}
+
 function renderStationSidebar() {
+  renderGroups();
   const status = $('sam-stations-status');
   if (!stationStore.loaded) {
     status.textContent = 'Chargement…';
@@ -628,6 +757,9 @@ function createContext(tool, root) {
     get accesJusqu() { return auth.accesJusqu; },
     get voitStations() { return auth.voitStations; },
     get voitOutils() { return auth.voitOutils; },
+    get peutGrouper() { return auth.peutGrouper; },
+    /** Fenêtre de création / modification d'un groupe de stations (bandeau Données). */
+    openGroupDialog: group => openGroupDialog(group || null),
     onAuthChange(fn) { track(auth.onChange(() => { if (!disposed) fn(auth); })); },
     location: {
       get: () => places.current,
@@ -916,7 +1048,9 @@ export function startShell() {
   $('sam-version').textContent = `SAM v${window.SAM_CONFIG?.version || '2.0.0'}`;
 
   // Bandeau des stations (onglet Données)
-  ['sam-stations-fav', 'sam-stations-others', 'sam-stations-pending'].forEach(id => $(id).addEventListener('click', handleStationListClick));
+  ['sam-stations-fav', 'sam-stations-others', 'sam-stations-pending', 'sam-groups-list'].forEach(id => $(id).addEventListener('click', handleStationListClick));
+  $('sam-groups-list').addEventListener('click', handleGroupListClick);
+  $('sam-groups-new').addEventListener('click', () => openGroupDialog());
   $('sam-stations-toggle').addEventListener('click', () => {
     const { favorites } = stationStore.groups();
     const open = sideState.showOthers ?? !favorites.length;
@@ -946,6 +1080,8 @@ export function startShell() {
   renderAuth();
   auth.onChange(() => {
     renderAuth();
+    // Groupes de stations selon le rôle (conseiller, admin, full admin)
+    if (stationStore.loaded) stationStore.loadGroups().then(() => renderStationSidebar()).catch(() => null);
     // Formule ou rôle changé : la page ouverte n'est peut-être plus permise
     if (activeTool && !routeFromHash()) handleRoute();
   });

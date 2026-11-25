@@ -3,7 +3,7 @@
 // le site ne contacte jamais Comsag directement, le jeton d'accès reste côté serveur.
 import { presets } from '../core/period.js';
 import { icons } from '../core/icons.js';
-import { stationState } from '../core/stations.js';
+import { stationState, stationStore } from '../core/stations.js';
 import { createStationDialog } from '../core/station-dialog.js';
 import { createZoomGroup, enableChartZoom, resetZoomGroup, timeAxis, timeTicksPlugin } from '../core/charts.js';
 import { todayISO, addDaysISO, formatNumber, formatDayMonth, formatDateShort, escapeHtml, storage } from '../core/util.js';
@@ -17,6 +17,8 @@ const COLORS = {
   hr: '#2e7d32', hrLight: '#8cc58f', rain: '#3b8ad9', cumul: '#1f3b63', humect: '#0f766e'
 };
 const SENSOR_COLORS = ['#7c3aed', '#0f766e', '#b45309', '#be185d', '#475569', '#0891b2'];
+// Groupes de stations : une couleur par station, bien distinctes (8 stations au plus).
+const GROUP_COLORS = ['#1f6fb2', '#d62728', '#2e9d3a', '#ef7d00', '#7b3fb8', '#0aa5b8', '#8c564b', '#d6439b'];
 const BASE_SENSORS = {
   t1: ['Température de l’air', '°C'], hyg1: ['Hygrométrie de l’air', '%'], pluv: ['Pluviométrie', 'mm'],
   hum: ['Humectation du feuillage', '%'], bat: ['Batterie', 'V'],
@@ -118,6 +120,26 @@ const TEMPLATE = `
     <div class="don-kpis" id="donKpis"></div>
   </section>
 
+  <section class="don-card don-station don-group hidden" id="donGroup">
+    <header class="don-station-head">
+      <div class="don-station-title">
+        <div class="don-station-name-row"><h2 id="donGroupName">—</h2></div>
+        <p class="don-station-sub" id="donGroupSub"></p>
+      </div>
+      <div class="don-head-actions">
+        <button class="don-btn" type="button" id="donGroupExport" title="Mesures horaires et résumé journalier de chaque station du groupe, dans un fichier Excel">Exporter (Excel)</button>
+        <button class="don-btn" type="button" id="donGroupEdit">Modifier le groupe</button>
+      </div>
+    </header>
+    <div class="don-table-wrap">
+      <table class="don-table don-group-table">
+        <thead><tr><th>Station</th><th>État</th><th>T actuelle</th><th>T min / max du jour</th><th>Humidité</th><th>Pluie du jour</th><th>Pluie 7 jours</th></tr></thead>
+        <tbody id="donGroupBody"></tbody>
+      </table>
+    </div>
+    <p class="don-hint">Touchez une station pour l’ouvrir. Données météo seulement : l’irrigation se consulte station par station.</p>
+  </section>
+
   <section class="don-toolbar" id="donToolbar">
     <div class="don-views" role="tablist" aria-label="Données affichées">
       ${VIEWS.map(v => `<button type="button" role="tab" class="don-view-tab" data-view="${v.id}" aria-selected="false"><span class="don-view-icon">${icons[v.icon]}</span><span class="don-view-label">${v.label}</span></button>`).join('')}
@@ -129,6 +151,11 @@ const TEMPLATE = `
     <span class="don-zoom-hint" id="donZoomHint">Glissez sur un graphique pour zoomer · double-clic pour revenir en arrière</span>
     <button class="don-btn don-btn-small hidden" type="button" id="donZoomReset">Toute la période</button>
   </div>
+
+  <section class="don-group-view hidden" id="donGroupView">
+    <p class="don-empty hidden" id="donGroupEmpty"></p>
+    <div class="don-chart-list" id="donGroupCharts"></div>
+  </section>
 
   <section class="don-view" data-panel="meteo">
     <p class="don-empty hidden" id="donMeteoEmpty"></p>
@@ -209,6 +236,9 @@ export async function mount(root, ctx) {
   let mode = storage.get('donnees.mode', 'hourly') === 'daily' ? 'daily' : 'hourly';
   let rimproModel = RIMPRO_MODELS.some(m => m.id === storage.get('donnees.rimpro')) ? storage.get('donnees.rimpro') : 'venturia';
   let dailyExpanded = false;
+  // Groupe de stations ouvert : mesures par station
+  let groupData = { id: null, hourly: new Map(), recent: new Map() };
+  const zoomDays = createZoomGroup(range => updateZoomBar(range));
   // Zoom partagé par tous les graphiques de l'onglet (même période affichée).
   const zoom = createZoomGroup(range => updateZoomBar(range));
 
@@ -528,7 +558,7 @@ export async function mount(root, ctx) {
       // Petits traits au-dessus des dates : heures, jours, semaines selon la place disponible.
       x: timeAxis(time, { fontSize: narrow() ? 11 : 12 }),
       y: {
-        beginAtZero: spec.kind === 'rain',
+        beginAtZero: spec.kind === 'rain' || spec.beginAtZero === true,
         min: spec.yMin, max: spec.yMax,
         grid: { color: '#eef0f3' }, border: { display: false },
         ticks: { color: '#4b5058' },
@@ -569,6 +599,7 @@ export async function mount(root, ctx) {
 
   function resetZoom() {
     resetZoomGroup(zoom, { apply: false });
+    resetZoomGroup(zoomDays, { apply: false });
   }
 
   function destroyCharts() {
@@ -590,9 +621,11 @@ export async function mount(root, ctx) {
     </article>`).join('');
     specs.forEach(spec => {
       const canvas = container.querySelector(`[data-chart="${spec.id}"] canvas`);
-      const chart = new window.Chart(canvas, chartConfig(spec, base));
-      enableChartZoom(chart, { group: zoom, resetButton: false });
-      charts.set(spec.id, { chart, spec, base });
+      // Un graphique peut avoir sa propre base de temps (pluie par jour en pas horaire) : zoom à part.
+      const own = spec.base || base;
+      const chart = new window.Chart(canvas, chartConfig(spec, own));
+      enableChartZoom(chart, { group: own.mode === base.mode ? zoom : zoomDays, resetButton: false });
+      charts.set(spec.id, { chart, spec, base: own });
     });
     updateZoomBar(zoom.range);
   }
@@ -611,7 +644,7 @@ export async function mount(root, ctx) {
 
   function exportChart(id) {
     const entry = charts.get(id);
-    const station = selected();
+    const station = stationStore.selectedGroup || selected();
     const p = ctx.period.get();
     if (!entry || !station) return;
     const { spec, base } = entry;
@@ -799,6 +832,223 @@ export async function mount(root, ctx) {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Groupe de stations : comparaison des courbes (température, humidité, pluie)
+  // -------------------------------------------------------------------------
+  const group = () => stationStore.selectedGroup;
+  const groupStations = () => stationStore.groupStations(group());
+  const colorOf = i => GROUP_COLORS[i % GROUP_COLORS.length];
+  const hidesOf = station => new Set(station.capteurs_masques || []);
+
+  async function loadGroupData() {
+    const g = group();
+    const p = ctx.period.get();
+    const stations = groupStations();
+    if (!g || !p?.start || !stations.length) { groupData = { id: g?.id || null, hourly: new Map(), recent: new Map() }; return; }
+    const token = ++loadToken;
+    const ids = stations.map(st => st.id);
+    const since = new Date(Date.now() - 7 * 24 * HOUR);
+    const [rows, last7] = await Promise.all([
+      fetchAll(() => supabase.from(store.mesuresTable)
+        .select('station_id,mesure_le,t_air,hr,pluie')
+        .in('station_id', ids)
+        .gte('mesure_le', parisInstant(p.start).toISOString())
+        .lte('mesure_le', parisInstant(p.end, true).toISOString())
+        .order('mesure_le', { ascending: true })
+        .order('station_id', { ascending: true })),
+      fetchAll(() => supabase.from(store.mesuresTable)
+        .select('station_id,mesure_le,t_air,hr,pluie')
+        .in('station_id', ids)
+        .gte('mesure_le', since.toISOString())
+        .order('mesure_le', { ascending: true })
+        .order('station_id', { ascending: true }))
+    ]);
+    if (token !== loadToken) return;
+    const split = list => {
+      const map = new Map(stations.map(st => [st.id, []]));
+      list.forEach(row => {
+        const st = stations.find(x => x.id === row.station_id);
+        if (st) map.get(st.id).push(toRow(row, hidesOf(st)));
+      });
+      return map;
+    };
+    groupData = { id: g.id, hourly: split(rows), recent: split(last7) };
+  }
+
+  /** Agrégats journaliers d'une station (mêmes règles que le résumé journalier). */
+  function dailyOf(rows) {
+    const p = ctx.period.get();
+    const byDay = new Map();
+    rows.forEach(row => {
+      const key = dayKey(row.at);
+      const d = byDay.get(key) || { t: [], hr: [], rain: 0, rainSeen: false };
+      if (row.t !== null) d.t.push(row.t);
+      if (row.hr !== null) d.hr.push(row.hr);
+      if (row.rain !== null) { d.rain += row.rain; d.rainSeen = true; }
+      byDay.set(key, d);
+    });
+    const days = [];
+    const last = p.end > todayISO() ? todayISO() : p.end;
+    for (let day = p.start; day <= last; day = addDaysISO(day, 1)) {
+      const d = byDay.get(day);
+      days.push({ day, tmin: d?.t.length ? Math.min(...d.t) : null, tmax: d?.t.length ? Math.max(...d.t) : null, tmoy: avg(d?.t), hr: avg(d?.hr), rain: d?.rainSeen ? d.rain : null });
+    }
+    return days;
+  }
+
+  /** Bases de temps du groupe : horaire (créneaux) ou journalière, et toujours journalière pour la pluie par jour. */
+  function groupBases() {
+    const p = ctx.period.get();
+    const stations = groupStations();
+    const daily = new Map(stations.map(st => [st.id, dailyOf(groupData.hourly.get(st.id) || [])]));
+    const dayItems = (daily.get(stations[0]?.id) || []).map(d => d.day);
+    const days = { mode: 'daily', items: dayItems.map(day => ({ day })), labels: dayItems.map(day => formatDayMonth(day)) };
+    if (mode === 'daily') return { main: days, days, daily };
+    const start = parisInstant(p.start).getTime();
+    const end = Math.min(parisInstant(p.end, true).getTime(), Date.now());
+    const slots = new Map(stations.map(st => [st.id, new Map((groupData.hourly.get(st.id) || []).map(r => [Math.floor(r.at.getTime() / HOUR), r]))]));
+    const items = [];
+    for (let s0 = Math.floor(start / HOUR); s0 <= Math.floor(end / HOUR); s0 += 1) {
+      const at = new Date(s0 * HOUR);
+      items.push({ at, day: dayKey(at), hour: hourOf(at), slot: s0 });
+    }
+    const main = { mode: 'hourly', items, labels: items.map(i => `${formatDayMonth(i.day)} ${i.hour.slice(0, 2)}h`), slots };
+    return { main, days, daily };
+  }
+
+  function groupSpecs() {
+    const stations = groupStations();
+    const { main, days, daily } = groupBases();
+    const hourlyValue = (st, pick) => main.items.map(it => round(pick(main.slots.get(st.id).get(it.slot))));
+    const dayValue = (st, pick) => (daily.get(st.id) || []).map(d => round(pick(d)));
+    const withSensor = code => stations.map((st, i) => ({ st, i })).filter(({ st }) => !hidesOf(st).has(code));
+    const specs = [];
+    const temp = withSensor('t1');
+    if (temp.length) {
+      specs.push(lineSpec('g-temp', 'Température', '°C', temp.map(({ st, i }) => ({
+        label: st.nom,
+        data: main.mode === 'hourly' ? hourlyValue(st, r => r?.t ?? null) : dayValue(st, d => d.tmoy),
+        color: colorOf(i), width: 2
+      })), { hint: main.mode === 'daily' ? 'Température moyenne du jour, une couleur par station.' : 'Une couleur par station.' }));
+    }
+    const hr = withSensor('hyg1');
+    if (hr.length) {
+      specs.push(lineSpec('g-hr', 'Humidité relative', '%', hr.map(({ st, i }) => ({
+        label: st.nom,
+        data: main.mode === 'hourly' ? hourlyValue(st, r => r?.hr ?? null) : dayValue(st, d => d.hr),
+        color: colorOf(i), width: 2
+      })), { yMin: 0, yMax: 100, hint: main.mode === 'daily' ? 'Humidité moyenne du jour.' : '' }));
+    }
+    const rain = withSensor('pluv');
+    if (rain.length) {
+      specs.push({
+        id: 'g-rain-day', title: 'Pluviométrie par jour', unit: 'mm', hint: 'Cumul de chaque jour, une barre par station.', kind: 'bars', beginAtZero: true, base: days,
+        datasets: rain.map(({ st, i }) => ({ label: st.nom, data: dayValue(st, d => d.rain), color: colorOf(i), type: 'bar' }))
+      });
+      specs.push(lineSpec('g-rain-cumul', 'Pluie cumulée sur la période', 'mm', rain.map(({ st, i }) => {
+        let total = 0;
+        const values = main.mode === 'hourly' ? main.items.map(it => main.slots.get(st.id).get(it.slot)?.rain ?? null) : (daily.get(st.id) || []).map(d => d.rain);
+        return { label: st.nom, data: values.map(v => { total += v || 0; return round(total); }), color: colorOf(i), width: 2.2 };
+      }), { yMin: 0, hint: 'Total depuis le début de la période choisie : compare vite les stations.' }));
+    }
+    return { specs, main };
+  }
+
+  function renderGroupTable() {
+    const stations = groupStations();
+    const today = todayISO();
+    $('donGroupBody').innerHTML = stations.map((st, i) => {
+      const rows = groupData.recent.get(st.id) || [];
+      const state = stationState(st);
+      const hide = hidesOf(st);
+      const last = [...rows].reverse().find(r => r.t !== null || r.hr !== null) || null;
+      const todayRows = rows.filter(r => dayKey(r.at) === today);
+      const temps = todayRows.map(r => r.t).filter(v => v !== null);
+      const rainToday = todayRows.some(r => r.rain !== null) ? todayRows.reduce((a, r) => a + (r.rain || 0), 0) : null;
+      const rain7 = rows.some(r => r.rain !== null) ? rows.reduce((a, r) => a + (r.rain || 0), 0) : null;
+      const cell = (label, value) => `<td data-label="${label}">${value}</td>`;
+      return `<tr>
+        <td data-label="Station"><button type="button" class="don-group-station" data-open-station="${escapeHtml(st.id)}"><i class="don-group-swatch" style="background:${colorOf(i)}" aria-hidden="true"></i><span>${escapeHtml(st.nom)}</span></button></td>
+        ${cell('État', `<span class="don-state is-${state.key}" title="${escapeHtml(st.derniere_mesure ? `Dernière mesure ${whenLabel(new Date(st.derniere_mesure))}` : '')}">${state.label}</span>`)}
+        ${cell('T actuelle', hide.has('t1') || last?.t == null ? '—' : `${formatNumber(last.t, 1)} °C <small>${escapeHtml(whenLabel(last.at))}</small>`)}
+        ${cell('T min / max du jour', hide.has('t1') || !temps.length ? '—' : `${formatNumber(Math.min(...temps), 1)} / ${formatNumber(Math.max(...temps), 1)} °C`)}
+        ${cell('Humidité', hide.has('hyg1') || last?.hr == null ? '—' : `${formatNumber(last.hr, 0)} %`)}
+        ${cell('Pluie du jour', hide.has('pluv') || rainToday === null ? '—' : `${formatNumber(rainToday, 1)} mm`)}
+        ${cell('Pluie 7 jours', hide.has('pluv') || rain7 === null ? '—' : `${formatNumber(rain7, 1)} mm`)}
+      </tr>`;
+    }).join('') || `<tr><td colspan="7" class="don-empty-cell">Aucune station de ce groupe ne vous est ouverte.</td></tr>`;
+  }
+
+  function renderGroup() {
+    const g = group();
+    if (!g) return;
+    const stations = groupStations();
+    $('donGroupName').textContent = g.nom;
+    const p = ctx.period.get();
+    $('donGroupSub').textContent = `Groupe de ${stations.length} station${stations.length > 1 ? 's' : ''} · ${stations.map(st => st.nom).join(', ')}`;
+    renderGroupTable();
+    modeButtons.forEach(b => {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    const { specs, main } = stations.length ? groupSpecs() : { specs: [], main: null };
+    const anyData = [...groupData.hourly.values()].some(list => list.length);
+    const message = !stations.length ? 'Ce groupe ne contient aucune station qui vous est ouverte.'
+      : !specs.length ? 'Aucun capteur météo affiché pour ces stations.'
+        : !anyData ? `Aucune mesure reçue sur cette période${p?.start ? '' : ''}.` : '';
+    $('donGroupEmpty').textContent = message;
+    $('donGroupEmpty').classList.toggle('hidden', !message);
+    if (message) { destroyCharts(); $('donGroupCharts').innerHTML = ''; }
+    else renderChartList($('donGroupCharts'), specs, main);
+    $('donZoomBar').classList.toggle('hidden', !charts.size);
+  }
+
+  /** Export Excel du groupe : une feuille horaire et une journalière, colonnes par station. */
+  async function exportGroupExcel(button) {
+    const g = group();
+    const p = ctx.period.get();
+    const stations = groupStations();
+    if (!g || ![...groupData.hourly.values()].some(l => l.length)) return ctx.ui.toast('Aucune mesure à exporter sur cette période.');
+    button.disabled = true;
+    try {
+      await ctx.vendor.xlsx();
+      const XLSX = window.XLSX;
+      const cols = stations.flatMap(st => {
+        const hide = hidesOf(st);
+        return [
+          !hide.has('t1') && { st, head: `${st.nom} — Température (°C)`, get: r => r.t, day: d => round(d.tmoy, 2), dayHead: `${st.nom} — T moy. (°C)` },
+          !hide.has('t1') && { st, day: d => round(d.tmin), dayHead: `${st.nom} — T min (°C)` },
+          !hide.has('t1') && { st, day: d => round(d.tmax), dayHead: `${st.nom} — T max (°C)` },
+          !hide.has('hyg1') && { st, head: `${st.nom} — Humidité (%)`, get: r => r.hr, day: d => round(d.hr), dayHead: `${st.nom} — HR moy. (%)` },
+          !hide.has('pluv') && { st, head: `${st.nom} — Pluie (mm)`, get: r => r.rain, day: d => (d.rain === null ? null : round(d.rain)), dayHead: `${st.nom} — Pluie (mm)` }
+        ].filter(Boolean);
+      });
+      const hourCols = cols.filter(c => c.get);
+      const slots = new Map(stations.map(st => [st.id, new Map((groupData.hourly.get(st.id) || []).map(r => [Math.floor(r.at.getTime() / HOUR), r]))]));
+      const allSlots = [...new Set([...slots.values()].flatMap(m => [...m.keys()]))].sort((a, b) => a - b);
+      const horaire = [['Date', 'Heure', ...hourCols.map(c => c.head)], ...allSlots.map(s0 => {
+        const at = new Date(s0 * HOUR);
+        return [dayKey(at), hourOf(at), ...hourCols.map(c => { const r = slots.get(c.st.id).get(s0); return r ? round(c.get(r)) : null; })];
+      })];
+      const daily = new Map(stations.map(st => [st.id, dailyOf(groupData.hourly.get(st.id) || [])]));
+      const dayList = daily.get(stations[0].id) || [];
+      const journalier = [['Jour', ...cols.map(c => c.dayHead)], ...dayList.map((d, k) => [d.day, ...cols.map(c => c.day(daily.get(c.st.id)[k]))])];
+      const wb = XLSX.utils.book_new();
+      const ws1 = XLSX.utils.aoa_to_sheet(horaire);
+      ws1['!cols'] = [{ wch: 11 }, { wch: 7 }, ...hourCols.map(c => ({ wch: Math.max(12, Math.min(34, c.head.length + 2)) }))];
+      const ws2 = XLSX.utils.aoa_to_sheet(journalier);
+      ws2['!cols'] = [{ wch: 11 }, ...cols.map(c => ({ wch: Math.max(12, Math.min(34, c.dayHead.length + 2)) }))];
+      XLSX.utils.book_append_sheet(wb, ws1, 'Horaire');
+      XLSX.utils.book_append_sheet(wb, ws2, 'Journalier');
+      XLSX.writeFile(wb, `SAM_groupe_${safeName(g.nom)}_${p.start}_${p.end}.xlsx`);
+    } catch (error) {
+      ctx.ui.toast(`Export impossible : ${error.message || error}`, 5000);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function renderView() {
     root.querySelectorAll('.don-view-tab').forEach(tab => {
       const on = tab.dataset.view === view;
@@ -826,6 +1076,22 @@ export async function mount(root, ctx) {
   }
 
   function renderAll() {
+    const g = group();
+    $('donGroup').classList.toggle('hidden', !g);
+    $('donGroupView').classList.toggle('hidden', !g);
+    root.querySelector('.don-views').classList.toggle('hidden', Boolean(g));
+    if (g) {
+      $('donStation').classList.add('hidden');
+      $('donToolbar').classList.remove('hidden');
+      $('donFilters').classList.remove('hidden');
+      root.querySelectorAll('.don-view').forEach(panel => panel.classList.add('hidden'));
+      $('donMeteoCharts').innerHTML = '';
+      $('donIrrigationCharts').innerHTML = '';
+      $('donRimpro').innerHTML = '';
+      renderGroup();
+      return;
+    }
+    $('donGroupCharts').innerHTML = '';
     const station = selected();
     $('donStation').classList.toggle('hidden', !station);
     $('donToolbar').classList.toggle('hidden', !station);
@@ -862,7 +1128,8 @@ export async function mount(root, ctx) {
   async function refreshStation({ keepZoom = false } = {}) {
     if (!keepZoom) resetZoom();
     try {
-      await loadStationData();
+      if (group()) await loadGroupData();
+      else await loadStationData();
       if (!ctx.scope.disposed) renderAll();
     } catch (error) {
       console.error(error);
@@ -898,7 +1165,8 @@ export async function mount(root, ctx) {
     mode = button.dataset.mode;
     storage.set('donnees.mode', mode);
     resetZoom();
-    renderView();
+    if (group()) renderGroup();
+    else renderView();
   }));
   $('donZoomReset').addEventListener('click', () => resetZoomGroup(zoom));
   root.addEventListener('click', event => {
@@ -919,10 +1187,16 @@ export async function mount(root, ctx) {
   });
   $('donEditStation').addEventListener('click', openEditor);
   ctx.stations.onChange(event => {
-    if (event.type === 'select') {
+    if (event.type === 'select' || event.type === 'group') {
       dailyExpanded = false;
       refreshStation();
     }
+  });
+  $('donGroupExport').addEventListener('click', event => exportGroupExcel(event.currentTarget));
+  $('donGroupEdit').addEventListener('click', () => ctx.openGroupDialog?.(group()));
+  $('donGroupBody').addEventListener('click', event => {
+    const button = event.target.closest('[data-open-station]');
+    if (button) stationStore.select(button.dataset.openStation);
   });
   ctx.period.onChange(() => { dailyExpanded = false; refreshStation(); });
   ctx.onAuthChange(() => { renderAdmin(); renderAll(); });

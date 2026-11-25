@@ -2,7 +2,7 @@
 // Fichiers du site : réseau d'abord (toujours la dernière version en ligne),
 // copie locale en secours hors connexion. Les API (Open-Meteo, Supabase…) ne sont
 // pas interceptées : chaque outil gère ses propres données hors connexion.
-const CACHE = 'sam-outils-v35';
+const CACHE = 'sam-outils-v36';
 const CORE = [
   './',
   './index.html',

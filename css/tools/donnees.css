@@ -231,3 +231,12 @@
   .tool-donnees .don-table td:first-child { font-weight: 700; }
   .tool-donnees .don-table td:first-child::before { content: none; }
 }
+
+/* Groupe de stations : tableau de comparaison */
+.tool-donnees .don-group .don-table-wrap { margin-top: 14px; }
+.tool-donnees .don-group-table td small { color: var(--sam-muted); font-size: .78rem; }
+.tool-donnees .don-group-station { display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; border: 0; background: transparent; color: var(--sam-ink); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.tool-donnees .don-group-station:hover span { color: var(--sam-red-700); text-decoration: underline; }
+.tool-donnees .don-group-swatch { flex: none; width: 12px; height: 12px; border-radius: 3px; }
+.tool-donnees .don-group .don-hint { margin: 10px 0 0; }
+.tool-donnees .don-group-view { display: grid; gap: 16px; }

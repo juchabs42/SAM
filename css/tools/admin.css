@@ -130,6 +130,7 @@
 }
 .tool-admin .adm-badge.is-admin { border-color: var(--sam-red-700); background: #fff1f2; color: var(--sam-red-700); }
 .tool-admin .adm-badge.is-full { border-color: var(--sam-red-700); background: var(--sam-red-700); color: #fff; }
+.tool-admin .adm-badge.is-conseiller { border-color: #1f6f8b; background: #eef7fa; color: #1f5a70; }
 .tool-admin .adm-badge.is-normal { color: var(--sam-ink-2); }
 .tool-admin .adm-badge.is-warn { border-color: #e0b15a; background: #fff8eb; color: #8a5a00; }
 .tool-admin .adm-badge.is-rimpro { justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; background: #6d28d9; color: #fff; font-weight: 800; }

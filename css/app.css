@@ -1073,3 +1073,30 @@ html.sam-expand-open, html.sam-expand-open body { overflow: hidden; }
   cursor: pointer;
 }
 .tool-root .sam-expand-head button.sam-expand-back svg { width: 18px; height: 18px; }
+
+/* Groupes de stations (bandeau Données) */
+.sam-groups { margin-bottom: 18px; }
+.sam-group-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.sam-group-head .sam-station-select .sam-icon { flex: none; width: 18px; height: 18px; opacity: .9; }
+.sam-group-count { flex: none; margin-left: auto; padding: 1px 7px; border-radius: 999px; background: rgba(255,255,255,.16); font-size: .74rem; font-weight: 700; }
+.sam-group-head .sam-place-star { width: 30px; height: 32px; margin-right: 0; opacity: .7; }
+.sam-group-head .sam-place-star:last-child { margin-right: 4px; }
+.sam-group-head .sam-place-star .sam-icon { width: 16px; height: 16px; }
+.sam-group-toggle .sam-icon { transition: transform .15s; }
+.sam-group-toggle[aria-expanded="true"] .sam-icon { transform: rotate(180deg); }
+.sam-group-stations { margin: 2px 0 6px 16px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,.22); }
+.sam-group-stations[hidden] { display: none; }
+.sam-group-stations .sam-station-select { padding-top: 8px; padding-bottom: 8px; font-size: .9rem; }
+.sam-group-new { margin-top: 8px; }
+.sam-group-dialog { width: min(520px, calc(100vw - 24px)); }
+.sam-group-form { display: grid; gap: 14px; padding: 22px; }
+.sam-group-form input[type="text"] { min-height: 42px; padding: 0 12px; border: 1px solid var(--sam-line); border-radius: 10px; font: inherit; color: var(--sam-ink); }
+.sam-group-choix { margin: 0; padding: 0; border: 0; min-width: 0; }
+.sam-group-choix legend { margin-bottom: 6px; padding: 0; color: var(--sam-ink-2); font-size: .86rem; font-weight: 500; }
+.sam-group-liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 14px; max-height: min(46vh, 380px); overflow: auto; padding: 10px 12px; border: 1px solid var(--sam-line); border-radius: 10px; }
+.sam-group-liste .sam-check { align-items: center; padding: 4px 0; }
+.sam-group-liste .sam-check small { color: var(--sam-muted); }
+.sam-group-liste input:disabled + span { opacity: .5; }
+.sam-group-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+.sam-group-actions > div { display: flex; gap: 8px; }
+.sam-group-suppr { color: var(--sam-red-700); }
