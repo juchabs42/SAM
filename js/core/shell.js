@@ -10,7 +10,7 @@ import { profile } from './profile.js';
 import { stationStore, stationState, stationToWatch, GROUP_MAX } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-25.2';
+const APP_VERSION = '2026-11-25.3';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
@@ -126,7 +126,6 @@ function renderGroups() {
   if (box.hidden) return;
   const groups = stationStore.groupes;
   $('sam-groups-list').innerHTML = groups.map(groupItem).join('');
-  $('sam-groups-hint').classList.toggle('hidden', groups.length > 0);
 }
 
 let groupDialog = null;
@@ -145,7 +144,7 @@ function openGroupDialog(group = null) {
       <div><p class="sam-kicker">Groupe de stations</p><h2 id="sam-group-title">${group ? 'Modifier le groupe' : 'Nouveau groupe'}</h2></div>
       <button class="sam-icon-button" type="button" data-group-close aria-label="Fermer">${icons.close}</button>
     </div>
-    <label class="sam-field">Nom du groupe<input id="sam-group-nom" type="text" maxlength="60" required placeholder="Bassin de Mogio, Nîmes…" value="${escapeHtml(group?.nom || '')}"></label>
+    <label class="sam-field">Nom du groupe<input id="sam-group-nom" type="text" maxlength="60" required value="${escapeHtml(group?.nom || '')}"></label>
     <fieldset class="sam-group-choix">
       <legend>Stations <span id="sam-group-compte"></span></legend>
       <div class="sam-group-liste">${all.map(st => `<label class="sam-check"><input type="checkbox" value="${escapeHtml(st.id)}"${chosen.has(st.id) ? ' checked' : ''}><span>${escapeHtml(st.nom)}${st.commune ? ` <small>${escapeHtml(st.commune)}</small>` : ''}</span></label>`).join('')}</div>
