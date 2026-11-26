@@ -10,11 +10,11 @@ const mobile = () => window.matchMedia('(max-width: 1100px)').matches;
 
 const OUTILS = [
   { id: 'indicateurs', title: 'Indicateurs agroclimatiques', text: 'Prévisions météo et indicateurs pour un lieu : pluie, températures, humidité, vent, évapotranspiration (ET0), déficit de pression de vapeur (DPV), indice de contrainte. Pour préparer la semaine.' },
-  { id: 'irrigation', title: 'Programmation irrigation', text: 'Les besoins en eau de la culture pour les jours à venir, d’après les prévisions : combien et quand irriguer.' },
-  { id: 'pilotage', title: 'Bilan irrigation', text: 'Le suivi de l’eau du sol de vos parcelles, jour après jour : la pluie et vos irrigations le remplissent, la culture le vide. SAM indique quand irriguer et combien. Vos parcelles ne sont visibles que par vous.' },
+  { id: 'irrigation', title: 'Programmation irrigation', text: 'Une estimation des besoins en eau de la culture pour les jours à venir, d’après les prévisions météo.' },
+  { id: 'pilotage', title: 'Bilan irrigation', text: 'Le suivi de l’eau du sol de vos parcelles, jour après jour : la pluie et vos irrigations le remplissent, la culture le vide. Vos parcelles ne sont visibles que par vous.' },
   { id: 'phenologie', title: 'Suivi phénologique', text: 'Les stades des vergers suivis par SudExpé, variété par variété, pour situer votre saison.' },
   { id: 'tavelure', title: 'Tavelure', text: 'Le suivi des périthèces, de la maturité des ascospores et des projections de tavelure relevés par SudExpé.' },
-  { id: 'piegeage', title: 'Piégeage', text: 'Les captures de ravageurs dans les pièges suivis par SudExpé, semaine par semaine.' }
+  { id: 'piegeage', title: 'Piégeage', text: 'Les captures de ravageurs relevées dans les pièges suivis par SudExpé.' }
 ];
 
 /** Étapes pour le compte connecté. */
@@ -32,8 +32,8 @@ function etapes() {
       list.push({ route: 'donnees', target: '#sam-groups', drawer: true, title: 'Mes groupes', text: 'Réunissez plusieurs stations proches dans un groupe (« Nouveau groupe ») : touchez-le pour comparer leurs courbes de température, d’humidité et de pluie, une couleur par station. Vos groupes ne sont visibles que par vous.' });
     }
     list.push(
-      { route: 'donnees', target: '#donStation', title: 'Les données de la station', text: 'La station ouverte : dernière mesure, état, et les onglets Météo, Irrigation et RIMpro selon ses capteurs. « Exporter (Excel) » télécharge ses mesures.' },
-      { route: 'donnees', target: '#donToolbar', title: 'Période et pas de temps', text: 'Choisissez les dates, puis l’affichage heure par heure ou jour par jour. Sur un graphique, glissez pour zoomer ; un double-clic revient en arrière.' }
+      { route: 'donnees', target: '#donStation', title: 'Les données de la station', text: 'La station ouverte : dernières mesures (température, humidité, pluie) et état de transmission. « Exporter (Excel) » télécharge ses mesures.' },
+      { route: 'donnees', target: '#donToolbar', title: 'Onglets, période et pas de temps', text: 'Les onglets Météo, Irrigation et Maladies / ravageurs (modèles RIMpro) s’affichent selon les capteurs de la station. Choisissez ensuite les dates et l’affichage heure par heure ou jour par jour. Sur un graphique, glissez pour zoomer ; un double-clic revient en arrière.' }
     );
   }
   if (outils) {
@@ -46,13 +46,13 @@ function etapes() {
     }));
   }
   if (meteo) {
-    list.push({ target: '#sam-nav-carte', title: 'Cartographie', text: 'Toutes les stations sur la carte, avec leur température et leur pluie du jour. Touchez une station pour ouvrir ses données.' });
+    list.push({ route: 'carte', target: '#carteMap', place: 'corner', title: 'Cartographie', text: 'Toutes les stations sur la carte, avec leur température et leur pluie du jour. Touchez une station pour ouvrir ses données.' });
   }
   if (auth.isFullAdmin) {
     list.push({ target: '#sam-nav-admin', title: 'Administration', text: 'Les comptes (invitations, rôles, formules, demandes d’accès), les stations et leurs capteurs. Le badge signale ce qui demande votre attention.' });
   }
   list.push(
-    { target: '#sam-perso', title: 'Mon profil', text: `Vos coordonnées, votre mot de passe et la double authentification${meteo ? ', et vos alertes gel : une notification ou un mail dès qu’une station passe sous votre seuil' : ''}.` },
+    { route: 'profil', target: '#sam-tool', place: 'corner', title: 'Mon profil', text: `Votre page : vos coordonnées, votre mot de passe et la double authentification${meteo ? ', et vos alertes gel, par notification ou par mail dès qu’une station passe sous votre seuil' : ''}. On y revient avec l’icône de compte, en haut à droite.` },
     { target: '#sam-footer a[href="#/aide"]', title: 'Besoin d’aide ?', text: 'Les questions fréquentes et le contact de l’équipe SudExpé sont dans l’Aide. Vous pourrez y relancer cette visite à tout moment. Bonne saison !' }
   );
   return list;
@@ -93,7 +93,11 @@ function placer(el) {
   const gap = 14;
   let x;
   let y;
-  if (mobile() && vw < 700) {
+  if (state.steps[state.index]?.place === 'corner') {
+    // Grande zone (carte, page) : la bulle dans un coin, par-dessus
+    x = vw < 700 ? (vw - bw) / 2 : vw - bw - 24;
+    y = vh - bh - (vw < 700 ? 12 : 24);
+  } else if (mobile() && vw < 700) {
     // Téléphone : la bulle en bas (ou en haut si l'élément est en bas de l'écran)
     x = (vw - bw) / 2;
     y = bottom + gap + bh < vh - 8 ? bottom + gap : top - gap - bh >= 8 ? top - gap - bh : vh - bh - 12;
