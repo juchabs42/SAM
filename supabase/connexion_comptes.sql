@@ -145,3 +145,7 @@ select
   (select count(*) from pg_policies where schemaname = 'public' and 'anon' = any (roles)) as politiques_sans_compte,
   (select count(*) from public.stations where rimpro_id is not null) as stations_rimpro,
   (select count(*) from public.profils) as profils;
+
+-- Visite guidée (première connexion) : date à laquelle le compte l'a terminée ou passée.
+-- Exécuté le 26/11/2026.
+alter table public.profils add column if not exists visite_vue_le timestamptz;

@@ -23,7 +23,10 @@ const TEMPLATE = `
       <p id="proEmail"></p>
       <span class="pro-badge" id="proRole"></span>
     </div>
-    <button class="sam-button pro-logout" type="button" id="proLogout">Se déconnecter</button>
+    <div class="pro-account-actions">
+      <button class="sam-button" type="button" id="proVisite">Revoir la visite guidée</button>
+      <button class="sam-button pro-logout" type="button" id="proLogout">Se déconnecter</button>
+    </div>
   </section>
 
   <section class="pro-card">
@@ -154,6 +157,7 @@ export async function mount(root, ctx) {
     }
   });
 
+  $('proVisite').addEventListener('click', () => ctx.startTour?.());
   $('proLogout').addEventListener('click', () => ctx.ui.logout());
   ctx.onAuthChange(() => renderHeader(ctx.profile.data));
 

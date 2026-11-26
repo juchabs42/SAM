@@ -7,10 +7,11 @@ import { auth, signOut } from './auth.js';
 import { places, searchPlaces, locateMe, placeLabel } from './places.js';
 import { period } from './period.js';
 import { profile } from './profile.js';
+import { startTour, maybeStartTour } from './visite.js';
 import { stationStore, stationState, stationToWatch, GROUP_MAX } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-26.1';
+const APP_VERSION = '2026-11-26.2';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },
@@ -759,6 +760,8 @@ function createContext(tool, root) {
     get peutGrouper() { return auth.peutGrouper; },
     /** Fenêtre de création / modification d'un groupe de stations (bandeau Données). */
     openGroupDialog: group => openGroupDialog(group || null),
+    /** Relance la visite guidée (Aide, Mon profil). */
+    startTour: () => startTour({ openDrawer, closeDrawer }),
     onAuthChange(fn) { track(auth.onChange(() => { if (!disposed) fn(auth); })); },
     location: {
       get: () => places.current,
@@ -1113,4 +1116,6 @@ export function startShell() {
   installChartExpand($('sam-tool'));
   window.addEventListener('hashchange', handleRoute);
   handleRoute();
+  // Visite guidée : première connexion du compte
+  maybeStartTour({ openDrawer, closeDrawer }).catch(() => null);
 }

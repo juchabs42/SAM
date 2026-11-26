@@ -38,6 +38,7 @@ const TEMPLATE = `
     ${q('Que comprend ma formule ?', '<p>Votre formule figure dans <a href="#/profil">Mon profil</a>. <strong>Météo</strong> : données des stations, cartographie et alertes gel sur mesure. <strong>Outils SAM</strong> : prévisions et indicateurs agroclimatiques, programmation et bilan de l’irrigation, suivis phénologie, tavelure et piégeage. <strong>Complète</strong> : les deux. Pour changer de formule, écrivez à l’équipe SudExpé.</p>')}
     ${q('J’ai oublié mon mot de passe', '<p>Sur la page de connexion, touchez « Mot de passe oublié ? » et indiquez votre adresse : un lien arrive par mail pour en choisir un nouveau (pensez aux indésirables). Une fois connecté, vous le changez dans <a href="#/profil">Mon profil</a>.</p>')}
     ${q('Qu’est-ce que la double authentification ?', '<p>Une protection en plus du mot de passe : à chaque connexion, SAM demande un code à 6 chiffres affiché par une application de votre téléphone (Google Authenticator, Microsoft Authenticator…). Elle s’active dans <a href="#/profil">Mon profil</a>. Téléphone perdu ou changé : un administrateur SAM la retire de votre compte, puis vous la réactivez.</p>')}
+    ${q('Revoir la visite guidée', '<p>La visite de la première connexion présente les stations, les données, chaque outil SAM et la cartographie. Relancez-la avec le bouton « Revoir la visite guidée », en bas de cette page ou dans <a href="#/profil">Mon profil</a>. Au clavier : flèches pour avancer ou reculer, Échap pour fermer.</p>')}
     ${q('Installer SAM sur mon téléphone', '<p>SAM s’installe comme une application, sans passer par un magasin d’applications. Sur Android, touchez « Installer » en haut de l’écran ou dans le menu ⋮ de Chrome. Sur iPhone, dans Safari : bouton Partager, puis « Sur l’écran d’accueil ». L’application se met à jour toute seule.</p>')}
     ${q('Qui voit mes informations ?', '<p>Votre profil n’est visible que par vous et par les administrateurs SAM de SudExpé ; vos parcelles du Bilan irrigation, par vous seul. Le détail figure dans la <a href="legal/confidentialite.html">politique de confidentialité</a>.</p>')}
   </section>
@@ -46,12 +47,14 @@ const TEMPLATE = `
     <h2>Contact</h2>
     <p>Une question, un problème, une idée d’amélioration : écrivez à l’équipe SudExpé, <a href="mailto:${CONTACT}?subject=SAM%20%3A%20">${CONTACT}</a>.</p>
     <p class="aid-legal"><a href="legal/mentions-legales.html">Mentions légales</a><a href="legal/confidentialite.html">Confidentialité</a><a href="legal/conditions.html">Conditions d’utilisation</a></p>
+    <p><button class="sam-button" type="button" id="aidVisite">Revoir la visite guidée</button></p>
     <p class="aid-version" id="aidVersion"></p>
   </section>
 </div>`;
 
-export async function mount(root) {
+export async function mount(root, ctx) {
   root.innerHTML = TEMPLATE;
+  root.querySelector('#aidVisite').addEventListener('click', () => ctx?.startTour?.());
   const version = window.SAM_CONFIG?.version;
   root.querySelector('#aidVersion').textContent = version ? `SAM version ${version}` : '';
   return {};

@@ -8,6 +8,7 @@
   box-shadow: var(--sam-shadow-sm);
 }
 .tool-profil .pro-account { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.tool-profil .pro-account-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 .tool-profil .pro-avatar {
   display: inline-flex;
   align-items: center;
@@ -45,7 +46,8 @@
 @media (max-width: 760px) {
   .tool-profil .pro-card { padding: 18px 16px; }
   .tool-profil .pro-grid { grid-template-columns: 1fr; }
-  .tool-profil .pro-logout { width: 100%; }
+  .tool-profil .pro-account-actions { width: 100%; margin-left: 0; }
+  .tool-profil .pro-account-actions .sam-button { flex: 1 1 160px; }
   .tool-profil .pro-actions .sam-button { width: 100%; }
 }
 

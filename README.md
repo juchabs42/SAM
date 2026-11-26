@@ -72,6 +72,10 @@ toutes les 15 minutes), une seule fois par interruption. `supabase/stations_muet
 température et d'humidité, pluie par jour et cumulée, une couleur par station, export Excel.
 Admin et full admin ont aussi les groupes. `supabase/conseillers.sql`.
 
+**Visite guidée** (`js/core/visite.js`) : à la première connexion de chaque compte (colonne
+`profils.visite_vue_le`), étapes selon le rôle et la formule (stations, groupes, données, chaque outil,
+cartographie, administration, profil, aide). Relançable depuis l'Aide et Mon profil.
+
 **Page de connexion** : onglets Connexion et Formules (tarifs du réseau, dans `index.html`).
 **Formules** (comptes normal) : Météo (Données, Cartographie, alertes gel), Outils SAM (les 6 outils,
 sans données des stations) ou Complète, avec date de fin facultative (Découverte : passé ce jour, page
