@@ -11,7 +11,7 @@ import { startTour, maybeStartTour } from './visite.js';
 import { stationStore, stationState, stationToWatch, GROUP_MAX } from './stations.js';
 import { storage, debounce, escapeHtml, formatDateShort, loadScript, loadCss, VENDOR, isISODate, todayISO } from './util.js';
 
-const APP_VERSION = '2026-11-26.3';
+const APP_VERSION = '2026-11-26.4';
 
 export const TOOLS = [
   { id: 'indicateurs', title: 'SAM Indicateurs agroclimatiques', card: 'Indicateurs <br>agro&shy;clima&shy;tiques', icon: 'toolIndicateurs' },

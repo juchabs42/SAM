@@ -52,7 +52,7 @@ function etapes() {
     list.push({ target: '#sam-nav-admin', title: 'Administration', text: 'Les comptes (invitations, rôles, formules, demandes d’accès), les stations et leurs capteurs. Le badge signale ce qui demande votre attention.' });
   }
   list.push(
-    { route: 'profil', target: '#sam-tool', place: 'corner', title: 'Mon profil', text: `Votre page : vos coordonnées, votre mot de passe et la double authentification${meteo ? ', et vos alertes gel, par notification ou par mail dès qu’une station passe sous votre seuil' : ''}. On y revient avec l’icône de compte, en haut à droite.` },
+    { route: 'profil', target: '.tool-profil .pro-main', place: 'corner', page: true, title: 'Mon profil', text: `Votre page : vos coordonnées, votre mot de passe et la double authentification${meteo ? ', et vos alertes gel, par notification ou par mail dès qu’une station passe sous votre seuil' : ''}. On y revient avec l’icône de compte, en haut à droite.` },
     { target: '#sam-footer a[href="#/aide"]', title: 'Besoin d’aide ?', text: 'Les questions fréquentes et le contact de l’équipe SudExpé sont dans l’Aide. Vous pourrez y relancer cette visite à tout moment. Bonne saison !' }
   );
   return list;
@@ -82,10 +82,13 @@ function placer(el) {
     return;
   }
   const r = el.getBoundingClientRect();
-  const pad = 6;
-  const top = Math.max(4, r.top - pad);
+  const step = state.steps[state.index];
+  const pad = step?.page ? 0 : 6;
+  // Page entière : la zone visible sous la barre du haut, sans déborder de l'écran
+  const haut = step?.page ? ($('sam-app').querySelector('.sam-topbar')?.getBoundingClientRect().bottom || 0) + 8 : 4;
+  const top = Math.max(haut, r.top - pad);
   const left = Math.max(4, r.left - pad);
-  const bottom = Math.min(vh - 4, r.bottom + pad);
+  const bottom = Math.min(vh - (step?.page ? 8 : 4), r.bottom + pad);
   const right = Math.min(vw - 4, r.right + pad);
   spot.style.cssText = `left:${left}px;top:${top}px;width:${right - left}px;height:${bottom - top}px`;
   const bw = bubble.offsetWidth;
@@ -147,7 +150,9 @@ async function montrer(i) {
     if (!el && next >= 0 && next < state.steps.length) return montrer(next);
   }
   if (el) {
-    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    // Page entière (Mon profil) : en haut de la page ; sinon, l'élément au centre de l'écran
+    if (step.page) window.scrollTo({ top: 0, behavior: 'instant' });
+    else el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
     await wait(mobile() ? 260 : 60);
   }
   state.target = el;
