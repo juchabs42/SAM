@@ -716,6 +716,8 @@ body.is-gated { background: var(--sam-red-900); }
 .sam-formule-options { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
 .sam-formule-options li { display: flex; justify-content: space-between; gap: 12px; padding-top: 6px; border-top: 1px solid var(--sam-line); color: var(--sam-muted); font-size: .88rem; }
 .sam-formule-options strong { color: var(--sam-ink, #1e2126); }
+.sam-formule-options .sam-formule-prix { text-align: right; }
+.sam-formule-options .sam-formule-prix small { display: block; color: var(--sam-muted); font-weight: 400; font-size: .78rem; }
 .sam-formules-demande { margin-top: 14px; }
 .sam-gate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .sam-gate-form .sam-field select { min-height: 46px; font-size: 1rem; }
