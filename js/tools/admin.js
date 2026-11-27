@@ -138,7 +138,7 @@ const TEMPLATE = `
         </div>
         <div id="capSensors" class="adm-chips" aria-label="Capteurs affichés"></div>
         <div id="capLatest" class="adm-latest"></div>
-        <p class="adm-hint" id="capHint">Toutes les mesures reçues, à leur heure exacte : un point par mesure (plusieurs points dans une heure quand la station transmet plus souvent). Glissez sur un graphique pour zoomer · double-clic pour revenir en arrière.</p>
+        <p class="adm-hint" id="capHint">Toutes les mesures reçues, chacune placée à son heure exacte : des envois rapprochés donnent des points rapprochés. Glissez sur un graphique pour zoomer · double-clic pour revenir en arrière.</p>
         <div id="capCharts" class="adm-charts"></div>
         <details class="adm-raw" id="capRawBox" hidden>
           <summary>Tableau des mesures brutes <span id="capRawCount"></span></summary>
@@ -1115,18 +1115,16 @@ export async function mount(root, ctx) {
       $('capCharts').innerHTML = '<p class="adm-empty">Cochez un ou plusieurs capteurs à afficher.</p>';
       return;
     }
-    // Repères de l'axe : une seule graduation par heure, même avec plusieurs mesures dans l'heure
-    let lastHour = '';
-    const items = rows.map(r => {
-      const at = new Date(r.mesure_le);
-      const item = { day: dayKeyFormat.format(at), hour: hourKeyFormat.format(at) };
-      const key = `${item.day} ${item.hour.slice(0, 2)}`;
-      if (key === lastHour) return null;
-      lastHour = key;
-      return item;
+    // Axe des temps à l'échelle : une graduation par heure, chaque mesure placée à sa minute
+    // exacte (des envois rapprochés donnent des points rapprochés : zoomer pour les détailler).
+    const t0 = Math.floor(new Date(rows[0].mesure_le).getTime() / HOUR) * HOUR;
+    const hours = Math.max(1, Math.ceil((new Date(rows[rows.length - 1].mesure_le).getTime() - t0) / HOUR) + 1);
+    const items = Array.from({ length: hours }, (_, k) => {
+      const at = new Date(t0 + k * HOUR);
+      return { day: dayKeyFormat.format(at), hour: hourKeyFormat.format(at) };
     });
-    // Une étiquette par mesure reçue, à la seconde près
-    const labels = rows.map(r => exactLabel(r.mesure_le));
+    const labels = items.map(() => '');
+    const xOf = iso => (new Date(iso).getTime() - t0) / HOUR;
     $('capCharts').innerHTML = state.capSensors.map(code => `
       <div class="adm-chart-card">
         <div class="adm-chart-head"><strong>${escapeHtml(sensorLabel(code))}</strong><span>${escapeHtml(sensorInfo(code).unite || '')} · ${escapeHtml(code)}</span></div>
@@ -1136,7 +1134,7 @@ export async function mount(root, ctx) {
     $('capCharts').querySelectorAll('canvas').forEach(canvas => {
       const code = canvas.dataset.code;
       const info = sensorInfo(code);
-      const values = rows.map(r => valueOf(r, code));
+      const values = rows.map(r => ({ x: xOf(r.mesure_le), y: valueOf(r, code), t: r.mesure_le })).filter(p => p.y !== null);
       const bar = code === 'pluv';
       const chart = new window.Chart(canvas, {
         type: bar ? 'bar' : 'line',
@@ -1151,6 +1149,7 @@ export async function mount(root, ctx) {
             // Un point par mesure reçue : les envois rapprochés se voient
             pointRadius: rows.length > 600 ? 0 : rows.length > 250 ? 1.5 : 2.5,
             pointHoverRadius: 4,
+            barThickness: 3,
             pointBackgroundColor: code === 'bat' ? '#7c3aed' : '#a20117',
             spanGaps: true,
             tension: 0.15
@@ -1160,14 +1159,25 @@ export async function mount(root, ctx) {
           responsive: true,
           maintainAspectRatio: false,
           animation: false,
-          interaction: { mode: 'index', intersect: false },
+          interaction: { mode: 'nearest', axis: 'x', intersect: false },
           plugins: {
             legend: { display: false },
-            tooltip: { callbacks: { title: list => (list[0] ? `Reçue le ${labels[list[0].dataIndex]}` : ''), label: c => `${c.dataset.label} : ${c.parsed.y === null ? '—' : formatNumber(c.parsed.y, 2)}` } },
+            tooltip: { callbacks: { title: list => (list[0]?.raw?.t ? `Reçue le ${exactLabel(list[0].raw.t)}` : ''), label: c => `${c.dataset.label} : ${c.parsed.y === null ? '—' : formatNumber(c.parsed.y, 2)}` } },
             samTimeTicks: { items, mode: 'hourly' }
           },
           scales: {
-            x: timeAxis({ items, mode: 'hourly' }, { fontSize: narrow ? 11 : 12 }),
+            x: {
+              ...timeAxis({ items, mode: 'hourly' }, { fontSize: narrow ? 11 : 12 }),
+              type: 'linear',
+              min: 0,
+              max: hours - 1,
+              // Une graduation possible par heure (le tracé des repères choisit lesquelles afficher)
+              afterBuildTicks: scale => {
+                const lo = Math.max(0, Math.ceil(scale.min));
+                const hi = Math.min(hours - 1, Math.floor(scale.max));
+                scale.ticks = Array.from({ length: Math.max(0, hi - lo + 1) }, (_, k) => ({ value: lo + k }));
+              }
+            },
             y: { beginAtZero: bar, grace: '5%', ticks: { font: { size: narrow ? 11 : 12 } } }
           }
         },
