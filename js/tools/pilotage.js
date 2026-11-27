@@ -15,6 +15,7 @@ import * as IR from '../fao56/irrigation.js';
 import { jourAnnee } from '../fao56/meteo.js';
 import { chargerMeteo } from '../fao56/meteo-source.js';
 import { creerStockage } from '../fao56/stockage.js';
+import { LIBELLES_STADES, NOMS_STADE, estAnnuel, stadesModele } from '../fao56/saison.js';
 
 // ---------------------------------------------------------------------------
 // Utilitaires d'affichage
@@ -100,44 +101,16 @@ function decomposerCoef(j, jours, methode) {
 // ---------------------------------------------------------------------------
 // Valeurs par défaut (indicatives, à ajuster)
 // ---------------------------------------------------------------------------
-const STADES_MODELES = {
-  precoce: ['03-10', '04-05', '06-01', '08-31', '10-31'],
-  pepins: ['03-25', '04-20', '06-15', '09-15', '11-15'],
-  tardif: ['04-01', '05-01', '06-30', '09-15', '10-31'],
-  vigne: ['04-01', '05-01', '06-15', '08-31', '10-31'],
-  persistant: ['03-01', '03-31', '05-31', '09-30', '11-30'],
-  prairie: ['03-15', '04-15', '05-31', '09-30', '10-31']
-};
-const GROUPE_STADES = {
-  pecher: 'precoce', abricotier: 'precoce', prunier: 'precoce', cerisier: 'precoce', amandier: 'precoce',
-  pommier: 'pepins', poirier: 'pepins',
-  olivier: 'persistant', clementinier: 'persistant', citronnier: 'persistant', oranger: 'persistant', avocatier: 'persistant', neflier: 'persistant',
-  'vigne-cuve': 'vigne', 'vigne-table': 'vigne'
-};
-const DUREES_ANNUELLES = [25, 35, 40, 20];
-const LIBELLES_STADES = {
-  annuel: ['Semis ou plantation', 'Levée terminée', 'Végétation maximale', 'Début de la maturation', 'Récolte'],
-  perenne: ['Débourrement', 'Premières feuilles étalées', 'Feuillage complet', 'Début du jaunissement', 'Chute des feuilles']
-};
-const NOMS_STADE = { hors: 'Hors saison', ini: 'Démarrage', dev: 'Croissance', mi: 'Pleine végétation', fin: 'Fin de saison' };
 const SEUILS = {
   fao: 'Standard : quand la RFU est consommée',
   confort: 'Confort : à la moitié de la RFU',
   perso: 'Personnalisé (% de la RU consommée)'
 };
 
-const estAnnuel = cult => cult?.type === 'annuel';
 const classeDe = (cult, id) => cult?.classes.find(c => c.id === id) || cult?.classes[0] || null;
 const anneeDe = iso => Number(String(iso).slice(0, 4));
 const ruSol = s => (finite(s?.thetaFC) && finite(s?.thetaWP) ? 1000 * (s.thetaFC - s.thetaWP) : null);
 const nomSol = id => solParId(id) ? (SOLS_VOISINS[id]?.nom || solParId(id).nom) : '';
-
-function stadesModele(cult, annee) {
-  if (estAnnuel(cult)) return C.stadesDepuisDurees(`${annee}-04-15`, DUREES_ANNUELLES);
-  const g = cult.type === 'perenne' ? 'prairie' : (GROUPE_STADES[cult.id] || 'tardif');
-  const [a, b, c, d, e] = STADES_MODELES[g];
-  return { debut: `${annee}-${a}`, finIni: `${annee}-${b}`, finDev: `${annee}-${c}`, finMi: `${annee}-${d}`, fin: `${annee}-${e}` };
-}
 
 /**
  * Dates intermédiaires placées entre le début et la fin de saison dans les mêmes proportions

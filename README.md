@@ -185,6 +185,7 @@ legal/                pages légales (mentions, confidentialité, conditions d'u
 404.html              page « introuvable »
 js/fao56/             moteur du Bilan irrigation (méthode FAO-56, 2025) : ET₀, coefficients, bilan, apports
 js/fao56/data/        tables FAO-56 2025 (cultures, sols, systèmes d'irrigation, paillages) avec leurs sources
+js/fao56/saison.js    calendrier moyen des stades par espèce, commun au Bilan irrigation et à la Programmation irrigation
 tests/fao56/          tests du moteur sur les exemples chiffrés de FAO-56 (node --test "tests/fao56/*.test.mjs")
 supabase/*.sql        tables, droits et règles d'accès, collecte des stations, imports
 supabase/functions/   fonction « sam-admin » (gestion des comptes depuis l'onglet Administration)
@@ -232,6 +233,16 @@ actuel du domaine, publier les outils sur un sous-domaine, par exemple `outils.s
   DNS actuel un enregistrement CNAME `outils` → `<projet>.pages.dev`.
 
 Une fois le domaine actif : le mettre en *Site URL* et dans les *Redirect URLs* de Supabase.
+
+## Programmation irrigation (calculette)
+
+Calcul rapide d'une dose à programmer sur une période (jusqu'à 16 jours) : besoin = ET₀ × Kc − pluie prise en compte.
+Le Kc vient des mêmes tables que le Bilan irrigation (FAO-56, édition 2025) : espèce, conduite / densité, puis
+curseur « Où en est la culture aujourd'hui ? » (repos, démarrage, croissance, pleine végétation, fin de saison).
+Pour les jours de la période, la culture avance au rythme du calendrier moyen de l'espèce (`js/fao56/saison.js`) ;
+la position réglée avance aussi d'un jour à l'autre. Hors saison : aucun apport. Pas d'ajustement au vent ni à
+l'humidité, pas d'effet du système d'irrigation ni de l'enherbement. Un Kc personnalisé (onglet Calcul) remplace
+le Kc calculé sur toute la période.
 
 ## Bilan irrigation (méthode FAO-56, édition 2025)
 

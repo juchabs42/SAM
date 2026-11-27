@@ -3,7 +3,10 @@
 // « Période de programmation ».
 import { presets } from '../core/period.js';
 import { enableChartZoom } from '../core/charts.js';
-import { todayISO, addDaysISO, diffDaysISO, storage } from '../core/util.js';
+import { todayISO, addDaysISO, diffDaysISO, storage, escapeHtml } from '../core/util.js';
+import { CULTURES, FAMILLES, parId } from '../fao56/data/cultures-2025.js';
+import * as C from '../fao56/coefficients.js';
+import { NOMS_STADE, estAnnuel, stadesModele, dureesModele } from '../fao56/saison.js';
 
 const TEMPLATE = `
 <div class="tool-main">
@@ -11,45 +14,68 @@ const TEMPLATE = `
     <p class="eyebrow">Paramètres de la parcelle</p>
     <h2>Caractéristiques de la parcelle et de l’irrigation</h2>
 
-    <h3 class="subheading">Système d’irrigation</h3>
-    <div class="form-grid">
-      <label>Système d'irrigation
-        <select id="systemType">
-          <option value="drip">Goutte-à-goutte</option>
-          <option value="micro">Micro-aspersion</option>
-          <option value="sprinkler">Aspersion</option>
-        </select>
-      </label>
-      <label>Calcul de la pluviométrie
-        <select id="rateMode">
-          <option value="known">Pluviométrie connue</option>
-          <option value="calculated">Calcul à partir des émetteurs</option>
-        </select>
-      </label>
-      <label id="knownRateLabel">Pluviométrie (mm/h)<input id="knownRate" type="number" min="0.01" step="0.01"></label>
-      <label id="emitterFlowLabel">Débit de l'émetteur (L/h)<input id="emitterFlow" type="number" min="0.01" step="0.01"></label>
-      <label id="emitterSpacingLabel">Espacement entre émetteurs (m)<input id="emitterSpacing" type="number" min="0.01" step="0.01"></label>
-      <label id="rowSpacingLabel">Inter-rang (m)<input id="rowSpacing" type="number" min="0.01" step="0.01"></label>
+    <div class="irr-tabs" role="tablist" aria-label="Paramètres de la parcelle">
+      <button type="button" role="tab" id="irrTab-culture" data-tab="culture" aria-controls="irrPanel-culture" aria-selected="true">Culture</button>
+      <button type="button" role="tab" id="irrTab-irrigation" data-tab="irrigation" aria-controls="irrPanel-irrigation" aria-selected="false" tabindex="-1">Irrigation</button>
+      <button type="button" role="tab" id="irrTab-calcul" data-tab="calcul" aria-controls="irrPanel-calcul" aria-selected="false" tabindex="-1">Calcul</button>
     </div>
 
-    <h3 class="subheading">Paramètres de calcul</h3>
-    <div class="form-grid">
-      <label>Kc (laisser vide = automatique)<input id="kcValue" type="number" min="0" max="2" step="0.05" placeholder="Automatique"></label>
-      <label>Part de pluie prise en compte (%)<input id="rainEfficiency" type="number" min="0" max="100" step="5"></label>
-      <label>État de l'inter-rang
-        <select id="interRowCover">
-          <option value="bare">Sol nu</option>
-          <option value="vegetated">Inter-rang végétalisé</option>
-        </select>
-      </label>
-      <label>Surface de la parcelle (ha)<input id="surfaceHa" type="number" min="0.01" step="0.01"></label>
+    <div class="irr-panel" id="irrPanel-culture" role="tabpanel" aria-labelledby="irrTab-culture">
+      <div class="form-grid">
+        <label>Espèce<select id="cropSpecies"></select></label>
+        <label id="cropClassLabel">Conduite / densité<select id="cropClass"></select></label>
+      </div>
+      <div class="irr-stade">
+        <div class="irr-stade-tete">
+          <label for="stagePos">Où en est la culture aujourd’hui ?</label>
+          <strong id="stageName">—</strong>
+        </div>
+        <input id="stagePos" type="range" min="0" max="120" step="1" aria-describedby="stageHelp">
+        <div id="stageBand" class="irr-stade-bande" aria-hidden="true"></div>
+        <p id="stageHelp" class="irr-stade-aide"></p>
+      </div>
+      <p id="kcInfo" class="irr-kc"></p>
+      <details class="info-box">
+        <summary>ⓘ D’où vient le Kc ?</summary>
+        <div id="kcExplain"></div>
+      </details>
     </div>
-    <p id="kcInfo" class="muted"></p>
-    <details class="info-box">
-      <summary>ⓘ Comprendre la part de pluie prise en compte</summary>
-      <p>Cette valeur correspond à la part de la pluie retenue dans le calcul du besoin d’irrigation, en fonction de la zone racinaire généralement alimentée par le système choisi.</p>
-      <p id="rainRecommendationInfo"><strong>Valeur conseillée : —</strong></p>
-    </details>
+
+    <div class="irr-panel" id="irrPanel-irrigation" role="tabpanel" aria-labelledby="irrTab-irrigation" hidden>
+      <div class="form-grid">
+        <label>Système d'irrigation
+          <select id="systemType">
+            <option value="drip">Goutte-à-goutte</option>
+            <option value="micro">Micro-aspersion</option>
+            <option value="sprinkler">Aspersion</option>
+          </select>
+        </label>
+        <label>Calcul de la pluviométrie
+          <select id="rateMode">
+            <option value="known">Pluviométrie connue</option>
+            <option value="calculated">Calcul à partir des émetteurs</option>
+          </select>
+        </label>
+        <label id="knownRateLabel">Pluviométrie (mm/h)<input id="knownRate" type="number" min="0.01" step="0.01"></label>
+        <label id="emitterFlowLabel">Débit de l'émetteur (L/h)<input id="emitterFlow" type="number" min="0.01" step="0.01"></label>
+        <label id="emitterSpacingLabel">Espacement entre émetteurs (m)<input id="emitterSpacing" type="number" min="0.01" step="0.01"></label>
+        <label id="rowSpacingLabel">Inter-rang (m)<input id="rowSpacing" type="number" min="0.01" step="0.01"></label>
+      </div>
+    </div>
+
+    <div class="irr-panel" id="irrPanel-calcul" role="tabpanel" aria-labelledby="irrTab-calcul" hidden>
+      <div class="form-grid">
+        <label>Kc personnalisé (vide = automatique)<input id="kcValue" type="number" min="0" max="2" step="0.05" placeholder="Automatique"></label>
+        <label>Part de pluie prise en compte (%)<input id="rainEfficiency" type="number" min="0" max="100" step="5"></label>
+        <label>Surface de la parcelle (ha)<input id="surfaceHa" type="number" min="0.01" step="0.01"></label>
+      </div>
+      <p id="kcOverrideInfo" class="muted"></p>
+      <details class="info-box">
+        <summary>ⓘ Comprendre la part de pluie prise en compte</summary>
+        <p>Cette valeur correspond à la part de la pluie retenue dans le calcul du besoin d’irrigation, en fonction de la zone racinaire généralement alimentée par le système choisi.</p>
+        <p id="rainRecommendationInfo"><strong>Valeur indicative : —</strong></p>
+      </details>
+    </div>
   </section>
 
   <section class="card">
@@ -99,6 +125,7 @@ const TEMPLATE = `
       <article><span>Pluie sur la période</span><strong id="periodRain">— mm</strong></article>
       <article><span>Pluie efficace sur la période</span><strong id="periodEffectiveRain">— mm</strong></article>
       <article><span>Besoin net de la période</span><strong id="periodNetNeed">— mm</strong></article>
+      <article><span>Kc sur la période</span><strong id="periodKc">—</strong></article>
     </div>
   </section>
 
@@ -117,17 +144,6 @@ const TEMPLATE = `
   <p class="attribution">Données météo : <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0).</p>
 </div>`;
 
-const KC_TABLE = {
-  bare: {
-    drip: { spring: 0.50, june: 0.65, summer: 0.80, postHarvest: 0.50 },
-    sprinkler: { spring: 0.60, june: 0.75, summer: 0.90, postHarvest: 0.60 }
-  },
-  vegetated: {
-    drip: { spring: 0.60, june: 0.75, summer: 0.90, postHarvest: 0.60 },
-    sprinkler: { spring: 0.70, june: 0.85, summer: 1.00, postHarvest: 0.70 }
-  }
-};
-
 const DEFAULTS = {
   surfaceHa: 1,
   lastIrrigation: null,
@@ -135,8 +151,12 @@ const DEFAULTS = {
   rainEfficiency: 25,
   rainAutoSystem: null,
   kcOverride: null,
+  // Culture (FAO-56, 2025) et position dans la saison (curseur, valeur du jour stageDate)
+  cultureId: 'pommier',
+  classeId: 'medium-central-leader-1-500-3-000-pl-ha',
+  stagePos: null,
+  stageDate: null,
   systemType: 'drip',
-  interRowCover: 'bare',
   rateMode: 'known',
   knownRate: 3,
   emitterFlow: 1.6,
@@ -221,25 +241,133 @@ export async function mount(root, ctx) {
     const stored = num(s.rainEfficiency, 80);
     return stored > 1 ? stored / 100 : stored;
   }
-  function kcPeriodForDate(iso) {
-    const month = new Date(`${iso}T12:00:00`).getMonth() + 1;
-    if (month === 4 || month === 5) return 'spring';
-    if (month === 6) return 'june';
-    if (month >= 7 && month <= 9) return 'summer';
-    if (month === 10) return 'postHarvest';
-    return null;
+  // ---------------------------------------------------------------------------
+  // Culture et Kc (FAO-56, 2025) : mêmes coefficients et même calendrier que le Bilan irrigation
+  // ---------------------------------------------------------------------------
+  // Curseur de 0 à 120 : 0–10 avant la saison, 10–110 la saison (début → fin), 110–120 après.
+  const AVANT = 10;
+  const APRES = 110;
+  const cultureDe = s => parId(s.cultureId) || parId('pommier');
+  const classeDe = (cult, id) => cult.classes.find(c => c.id === id) || classeParDefaut(cult);
+  function classeParDefaut(cult) {
+    return cult.classes.find(c => /moyenne/i.test(c.nom)) || cult.classes[cult.classes.length > 2 ? 1 : 0];
   }
-  function kcSystemFamily(systemType) { return systemType === 'drip' ? 'drip' : 'sprinkler'; }
-  function automaticKc(iso, s) {
-    const period = kcPeriodForDate(iso);
-    if (!period) return 0;
-    const cover = s.interRowCover === 'vegetated' ? 'vegetated' : 'bare';
-    return KC_TABLE[cover][kcSystemFamily(s.systemType)][period];
+  const longueurSaison = cult => dureesModele(cult).reduce((a, b) => a + b, 0);
+
+  /** Position estimée d'après la date du jour et le calendrier moyen de l'espèce. */
+  function positionEstimee(cult) {
+    const today = todayISO();
+    const m = stadesModele(cult, Number(today.slice(0, 4)));
+    if (today < m.debut) return AVANT / 2;
+    if (today > m.fin) return (APRES + 120) / 2;
+    return AVANT + (100 * C.ecartJours(m.debut, today)) / longueurSaison(cult);
   }
+  /** Position du jour : celle réglée au curseur, avancée du temps écoulé depuis (la culture progresse). */
+  function positionDuJour(s) {
+    const cult = cultureDe(s);
+    if (s.stagePos === null || s.stagePos === undefined || s.stagePos === '') return { pos: positionEstimee(cult), estimee: true };
+    const pos = num(s.stagePos);
+    const ecoule = s.stageDate ? Math.max(0, diffDaysISO(s.stageDate, todayISO())) : 0;
+    if (pos < AVANT || pos > APRES || !ecoule) return { pos, avancee: false };
+    const avance = pos + (100 * ecoule) / longueurSaison(cult);
+    return { pos: avance > APRES ? (APRES + 120) / 2 : avance, avancee: true, depuis: s.stageDate };
+  }
+  /** Dates des stades qui placent aujourd'hui à la position donnée (rythme moyen de l'espèce). */
+  function stadesVirtuels(cult, pos) {
+    const durees = dureesModele(cult);
+    const L = durees.reduce((a, b) => a + b, 0);
+    const debut = addDaysISO(todayISO(), -Math.round(((pos - AVANT) / 100) * L));
+    return C.stadesDepuisDurees(debut, durees);
+  }
+  function zoneDe(cult, pos) {
+    if (pos < AVANT) return 'avant';
+    if (pos > APRES) return 'apres';
+    return C.stadeDuJour(todayISO(), stadesVirtuels(cult, pos)).stade;
+  }
+  const valeursKc = cl => ({ ini: cl.kc.ini, mi: cl.kc.mid, fin: cl.kc.end });
+
+  /** Kc d'un jour : FAO-56 (2025) selon l'espèce, la conduite et le stade ; 0 hors saison. */
   function kcForDate(iso, s) {
     if (s.kcOverride !== null && s.kcOverride !== '') return num(s.kcOverride);
-    return automaticKc(iso, s);
+    const cult = cultureDe(s);
+    const { pos } = positionDuJour(s);
+    if (pos < AVANT || pos > APRES) return 0;
+    return C.coefDuJour(iso, stadesVirtuels(cult, pos), valeursKc(classeDe(cult, s.classeId)), 0);
   }
+
+  const f2 = v => num(v).toFixed(2).replace('.', ',');
+  function texteZone(cult, zone) {
+    const annuel = estAnnuel(cult);
+    const textes = annuel ? {
+      avant: ['Avant le semis', 'Avant le semis ou la plantation : aucun apport n’est calculé.'],
+      ini: [NOMS_STADE.ini, 'Du semis ou de la plantation jusqu’à environ 10 % du sol couvert par la culture.'],
+      dev: [NOMS_STADE.dev, 'La culture couvre de plus en plus le sol.'],
+      mi: [NOMS_STADE.mi, 'La culture couvre le sol au maximum, souvent vers la floraison.'],
+      fin: [NOMS_STADE.fin, 'Les feuilles jaunissent, les fruits ou les grains mûrissent.'],
+      apres: ['Récolte faite', 'Culture récoltée : aucun apport n’est calculé.']
+    } : {
+      avant: ['Repos hivernal', 'Les bourgeons ne sont pas encore ouverts : aucun apport n’est calculé.'],
+      ini: [NOMS_STADE.ini, 'Du débourrement aux premières feuilles étalées.'],
+      dev: [NOMS_STADE.dev, 'Les pousses s’allongent et le feuillage couvre de plus en plus le sol.'],
+      mi: [NOMS_STADE.mi, 'Le feuillage a atteint son volume maximal : les pousses ne s’allongent presque plus.'],
+      fin: [NOMS_STADE.fin, 'Les feuilles vieillissent ou jaunissent, souvent après la récolte.'],
+      apres: ['Feuilles tombées', 'La plupart des feuilles sont tombées : aucun apport n’est calculé.']
+    };
+    return textes[zone] || textes.mi;
+  }
+
+  function remplirEspeces(s) {
+    const cult = cultureDe(s);
+    q('#cropSpecies').innerHTML = Object.entries(FAMILLES).map(([k, v]) => {
+      const liste = CULTURES.filter(c => c.famille === k);
+      return liste.length ? `<optgroup label="${escapeHtml(v)}">${liste.map(c => `<option value="${c.id}"${c.id === cult.id ? ' selected' : ''}>${escapeHtml(c.nom)}</option>`).join('')}</optgroup>` : '';
+    }).join('');
+    remplirClasses(cult, classeDe(cult, s.classeId).id);
+  }
+  function remplirClasses(cult, classeId) {
+    q('#cropClass').innerHTML = cult.classes.map(c => `<option value="${c.id}"${c.id === classeId ? ' selected' : ''}>${escapeHtml(c.nom)}</option>`).join('');
+    q('#cropClassLabel').hidden = cult.classes.length < 2;
+  }
+  /** Bande colorée des stades sous le curseur, aux proportions du calendrier moyen de l'espèce. */
+  function dessinerBande(cult) {
+    const durees = dureesModele(cult);
+    const L = durees.reduce((a, b) => a + b, 0);
+    const parts = [['avant', AVANT], ...['ini', 'dev', 'mi', 'fin'].map((k, i) => [k, (100 * durees[i]) / L]), ['apres', 120 - APRES]];
+    q('#stageBand').innerHTML = parts.map(([k, w]) => `<span class="is-${k}" style="flex:${w.toFixed(2)} 1 0" title="${escapeHtml(texteZone(cult, k)[0])}">${escapeHtml(texteZone(cult, k)[0])}</span>`).join('');
+  }
+
+  /** Stade et Kc du jour affichés sous le curseur (pendant le glissement aussi). */
+  function updateKcInfo() {
+    const s = settings();
+    const cult = parId(val('cropSpecies')) || cultureDe(s);
+    const cl = classeDe(cult, val('cropClass'));
+    const etat = positionDuJour(s);
+    // Position exacte enregistrée tant que le curseur n'a pas été déplacé (même Kc que le calcul)
+    const touche = q('#stagePos').dataset.touche === '1' || cult.id !== cultureDe(s).id;
+    const pos = touche ? num(q('#stagePos').value) : etat.pos;
+    const zone = zoneDe(cult, pos);
+    const [nom, aide] = texteZone(cult, zone);
+    q('#stageName').textContent = nom;
+    const suivi = touche ? ''
+      : etat.estimee ? ' Position estimée d’après la date et le calendrier moyen de l’espèce : déplacez le curseur si besoin.'
+      : etat.avancee ? ` Position avancée automatiquement depuis le ${formatShortDate(etat.depuis)} : la culture a progressé.` : '';
+    q('#stageHelp').textContent = aide + suivi;
+    const kcPerso = val('kcValue');
+    const horsSaison = zone === 'avant' || zone === 'apres';
+    const kcJour = horsSaison ? 0 : C.coefDuJour(todayISO(), stadesVirtuels(cult, pos), valeursKc(cl), 0);
+    q('#kcInfo').innerHTML = kcPerso !== ''
+      ? `Kc personnalisé appliqué à toute la période : <strong>${f2(kcPerso)}</strong> (onglet Calcul). Le Kc de la culture serait aujourd’hui de ${f2(kcJour)}.`
+      : horsSaison ? 'Hors saison : <strong>aucun apport n’est calculé</strong>.'
+        : `Kc aujourd’hui : <strong>${f2(kcJour)}</strong> · ${escapeHtml(nom.toLowerCase())}`;
+    q('#kcOverrideInfo').textContent = kcPerso !== ''
+      ? `Ce Kc remplace celui de la culture (${f2(kcJour)} aujourd’hui) sur toute la période. Videz le champ pour revenir au calcul automatique.`
+      : '';
+    const k = cl.kc;
+    q('#kcExplain').innerHTML = `<p>Valeurs de la FAO (FAO-56, révision 2025) pour <strong>${escapeHtml(cult.nom)}</strong>${cult.classes.length > 1 ? ` — ${escapeHtml(cl.nom)}` : ''} : <strong>${f2(k.ini)}</strong> au démarrage, <strong>${f2(k.mid)}</strong> en pleine végétation, <strong>${f2(k.end)}</strong> en fin de saison. Entre deux stades, le Kc change progressivement, comme dans le Bilan irrigation.</p>`
+      + '<p>Le curseur indique où en est la culture aujourd’hui. Pour chaque jour de la période, l’outil fait avancer la culture au rythme moyen de l’espèce. Hors saison, aucun apport n’est calculé.</p>'
+      + `<p>Le Kc ne dépend pas du système d’irrigation et n’est pas ajusté au vent ni à l’humidité du lieu.${cult.type === 'ligneux' ? ' Il a été établi surtout sur des parcelles sans enherbement : l’herbe de l’inter-rang n’est pas comptée.' : ''}</p>`;
+  }
+
   function rainRecommendationForSystem(systemType) {
     if (systemType === 'micro') return { percent: 60, label: 'micro-aspersion' };
     if (systemType === 'sprinkler') return { percent: 90, label: 'aspersion' };
@@ -248,24 +376,7 @@ export async function mount(root, ctx) {
   function updateRainRecommendation(applyValue = false) {
     const recommendation = rainRecommendationForSystem(val('systemType') || 'drip');
     if (applyValue) q('#rainEfficiency').value = recommendation.percent;
-    q('#rainRecommendationInfo').innerHTML = `<strong>Valeur conseillée pour ${recommendation.label} : ${recommendation.percent} %.</strong>`;
-  }
-
-  function updateKcInfo() {
-    const currentKc = val('kcValue');
-    if (currentKc !== '') {
-      q('#kcInfo').textContent = `Kc personnalisé appliqué à toute la période : ${num(currentKc).toFixed(2).replace('.', ',')}.`;
-      return;
-    }
-    const currentSystem = val('systemType') || 'drip';
-    const cover = val('interRowCover') === 'vegetated' ? 'vegetated' : 'bare';
-    const values = KC_TABLE[cover][kcSystemFamily(currentSystem)];
-    const coverLabel = cover === 'vegetated' ? 'inter-rang végétalisé' : 'sol nu';
-    const systemLabel = currentSystem === 'micro' ? 'micro-aspersion' : currentSystem === 'sprinkler' ? 'aspersion' : 'goutte-à-goutte';
-    const f = v => v.toFixed(2).replace('.', ',');
-    let text = `Kc automatiques — ${coverLabel} + ${systemLabel} : avril–mai ${f(values.spring)} · juin ${f(values.june)} · juillet–septembre ${f(values.summer)} · octobre (après récolte) ${f(values.postHarvest)}.`;
-    if (currentSystem === 'micro') text += ' Valeurs issues de la grille aspersion.';
-    q('#kcInfo').textContent = text;
+    q('#rainRecommendationInfo').innerHTML = `<strong>Valeur indicative pour ${recommendation.label} : ${recommendation.percent} %.</strong>`;
   }
 
   function toggleRateFields() {
@@ -282,7 +393,7 @@ export async function mount(root, ctx) {
 
   function loadForm() {
     const s = settings();
-    ['surfaceHa', 'frequency', 'systemType', 'interRowCover', 'rateMode', 'knownRate', 'emitterFlow', 'emitterSpacing', 'rowSpacing']
+    ['surfaceHa', 'frequency', 'systemType', 'rateMode', 'knownRate', 'emitterFlow', 'emitterSpacing', 'rowSpacing']
       .forEach(id => { q(`#${id}`).value = s[id]; });
     q('#lastIrrigation').value = s.lastIrrigation || defaultLastIrrigation();
     const rainPercent = num(s.rainEfficiency, 80) <= 1 ? num(s.rainEfficiency, 0.8) * 100 : num(s.rainEfficiency, 80);
@@ -296,6 +407,9 @@ export async function mount(root, ctx) {
       q('#rainEfficiency').value = round(rainPercent, 0);
     }
     q('#kcValue').value = s.kcOverride === null ? '' : s.kcOverride;
+    remplirEspeces(s);
+    dessinerBande(cultureDe(s));
+    q('#stagePos').value = String(Math.round(positionDuJour(s).pos));
     updateKcInfo();
     updateRainRecommendation(false);
     toggleRateFields();
@@ -309,7 +423,8 @@ export async function mount(root, ctx) {
     s.rainEfficiency = num(val('rainEfficiency'), 80);
     s.kcOverride = val('kcValue') === '' ? null : num(val('kcValue'));
     s.systemType = val('systemType');
-    s.interRowCover = val('interRowCover');
+    s.cultureId = val('cropSpecies') || s.cultureId;
+    s.classeId = val('cropClass') || s.classeId;
     s.rainAutoSystem = s.systemType;
     s.rateMode = val('rateMode');
     s.knownRate = num(val('knownRate'), 3);
@@ -470,6 +585,11 @@ export async function mount(root, ctx) {
     q('#periodRain').textContent = `${fr(periodRain, 1)} mm`;
     q('#periodEffectiveRain').textContent = `${fr(periodEffectiveRain, 1)} mm`;
     q('#periodNetNeed').textContent = `${fr(periodNet, 1)} mm`;
+    const kcs = periodRows.map(row => kcForDate(row.date, s));
+    const kcMin = Math.min(...kcs);
+    const kcMaxi = Math.max(...kcs);
+    q('#periodKc').textContent = kcMaxi === 0 ? '0 (hors saison)'
+      : Math.abs(kcMaxi - kcMin) < 0.005 ? f2(kcMin) : `${f2(kcMin)} à ${f2(kcMaxi)}`;
     q('#updatedAt').textContent = weatherMeta?.savedAt
       ? `Données enregistrées le ${new Date(weatherMeta.savedAt).toLocaleString('fr-FR')}`
       : `Météo actualisée à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
@@ -557,9 +677,53 @@ export async function mount(root, ctx) {
   // Événements
   q('#calculateButton').addEventListener('click', () => { saveForm(); render(); });
   q('#rateMode').addEventListener('change', toggleRateFields);
-  q('#systemType').addEventListener('change', () => { updateRainRecommendation(true); updateKcInfo(); });
-  q('#interRowCover').addEventListener('change', updateKcInfo);
+  q('#systemType').addEventListener('change', () => updateRainRecommendation(true));
   q('#kcValue').addEventListener('input', updateKcInfo);
+
+  // Onglets Culture / Irrigation / Calcul
+  const onglets = [...root.querySelectorAll('.irr-tabs [role="tab"]')];
+  function ouvrirOnglet(nom, focus = false) {
+    onglets.forEach(b => {
+      const actif = b.dataset.tab === nom;
+      b.setAttribute('aria-selected', String(actif));
+      b.tabIndex = actif ? 0 : -1;
+      q(`#irrPanel-${b.dataset.tab}`).hidden = !actif;
+      if (actif && focus) b.focus();
+    });
+  }
+  onglets.forEach((b, i) => {
+    b.addEventListener('click', () => ouvrirOnglet(b.dataset.tab));
+    b.addEventListener('keydown', e => {
+      const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (d) { e.preventDefault(); ouvrirOnglet(onglets[(i + d + onglets.length) % onglets.length].dataset.tab, true); }
+    });
+  });
+
+  // Culture : espèce, conduite, stade
+  q('#cropSpecies').addEventListener('change', () => {
+    const cult = parId(val('cropSpecies'));
+    if (!cult) return;
+    remplirClasses(cult, classeParDefaut(cult).id);
+    dessinerBande(cult);
+    const s = saveForm();
+    s.stagePos = null; // nouvelle espèce : position estimée d'après la date
+    s.stageDate = null;
+    persist(s);
+    delete q('#stagePos').dataset.touche;
+    q('#stagePos').value = String(Math.round(positionEstimee(cult)));
+    updateKcInfo();
+    render();
+  });
+  q('#cropClass').addEventListener('change', () => { saveForm(); updateKcInfo(); render(); });
+  q('#stagePos').addEventListener('input', () => { q('#stagePos').dataset.touche = '1'; updateKcInfo(); });
+  q('#stagePos').addEventListener('change', () => {
+    const s = saveForm();
+    s.stagePos = num(val('stagePos'));
+    s.stageDate = todayISO();
+    persist(s);
+    updateKcInfo();
+    render();
+  });
   q('#kcValue').addEventListener('change', () => { saveForm(); updateKcInfo(); render(); });
   q('#lastIrrigation').addEventListener('change', () => { saveForm(); render(); });
   ctx.location.onChange(() => refreshWeather());
