@@ -20,6 +20,9 @@ const BASE_COLUMNS = { t1: 't_air', hyg1: 'hr', pluv: 'pluie' };
 const dateTimeFormat = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const shortFormat = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const dayKeyFormat = new Intl.DateTimeFormat('fr-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+// Heure exacte de réception d'une mesure brute (onglet Capteurs)
+const exactFormat = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+const exactLabel = iso => exactFormat.format(new Date(iso)).replace(' ', ' à ');
 const hourKeyFormat = new Intl.DateTimeFormat('fr-FR', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 // Formules d'abonnement des comptes « normal » (supabase/formules.sql)
 const FORMULES = {
@@ -135,8 +138,13 @@ const TEMPLATE = `
         </div>
         <div id="capSensors" class="adm-chips" aria-label="Capteurs affichés"></div>
         <div id="capLatest" class="adm-latest"></div>
-        <p class="adm-hint" id="capHint">Glissez sur un graphique pour zoomer · double-clic pour revenir en arrière.</p>
+        <p class="adm-hint" id="capHint">Toutes les mesures reçues, à leur heure exacte : un point par mesure (plusieurs points dans une heure quand la station transmet plus souvent). Glissez sur un graphique pour zoomer · double-clic pour revenir en arrière.</p>
         <div id="capCharts" class="adm-charts"></div>
+        <details class="adm-raw" id="capRawBox" hidden>
+          <summary>Tableau des mesures brutes <span id="capRawCount"></span></summary>
+          <div class="adm-raw-actions"><button type="button" class="adm-button is-small" id="capRawCsv">Télécharger (CSV)</button></div>
+          <div class="adm-table-wrap adm-raw-wrap"><table class="adm-table adm-raw-table"><thead id="capRawHead"></thead><tbody id="capRawBody"></tbody></table></div>
+        </details>
       </div>
       <div class="adm-card">
         <div class="adm-bar">
@@ -1101,16 +1109,24 @@ export async function mount(root, ctx) {
     destroySensorCharts();
     resetZoomGroup(capZoom, { apply: false });
     const rows = state.sensorRows;
+    renderRawTable();
     if (!rows.length) { $('capCharts').innerHTML = ''; return; }
     if (!state.capSensors.length) {
       $('capCharts').innerHTML = '<p class="adm-empty">Cochez un ou plusieurs capteurs à afficher.</p>';
       return;
     }
+    // Repères de l'axe : une seule graduation par heure, même avec plusieurs mesures dans l'heure
+    let lastHour = '';
     const items = rows.map(r => {
       const at = new Date(r.mesure_le);
-      return { day: dayKeyFormat.format(at), hour: hourKeyFormat.format(at) };
+      const item = { day: dayKeyFormat.format(at), hour: hourKeyFormat.format(at) };
+      const key = `${item.day} ${item.hour.slice(0, 2)}`;
+      if (key === lastHour) return null;
+      lastHour = key;
+      return item;
     });
-    const labels = items.map(i => `${i.day.slice(8, 10)}/${i.day.slice(5, 7)} ${i.hour.slice(0, 2)}h`);
+    // Une étiquette par mesure reçue, à la seconde près
+    const labels = rows.map(r => exactLabel(r.mesure_le));
     $('capCharts').innerHTML = state.capSensors.map(code => `
       <div class="adm-chart-card">
         <div class="adm-chart-head"><strong>${escapeHtml(sensorLabel(code))}</strong><span>${escapeHtml(sensorInfo(code).unite || '')} · ${escapeHtml(code)}</span></div>
@@ -1131,9 +1147,12 @@ export async function mount(root, ctx) {
             data: values,
             borderColor: code === 'bat' ? '#7c3aed' : '#a20117',
             backgroundColor: bar ? 'rgba(59, 138, 217, .75)' : 'rgba(162, 1, 23, .08)',
-            borderWidth: 1.8,
-            pointRadius: 0,
-            spanGaps: false,
+            borderWidth: 1.6,
+            // Un point par mesure reçue : les envois rapprochés se voient
+            pointRadius: rows.length > 600 ? 0 : rows.length > 250 ? 1.5 : 2.5,
+            pointHoverRadius: 4,
+            pointBackgroundColor: code === 'bat' ? '#7c3aed' : '#a20117',
+            spanGaps: true,
             tension: 0.15
           }]
         },
@@ -1144,7 +1163,7 @@ export async function mount(root, ctx) {
           interaction: { mode: 'index', intersect: false },
           plugins: {
             legend: { display: false },
-            tooltip: { callbacks: { label: c => `${c.dataset.label} : ${c.parsed.y === null ? '—' : formatNumber(c.parsed.y, 2)}` } },
+            tooltip: { callbacks: { title: list => (list[0] ? `Reçue le ${labels[list[0].dataIndex]}` : ''), label: c => `${c.dataset.label} : ${c.parsed.y === null ? '—' : formatNumber(c.parsed.y, 2)}` } },
             samTimeTicks: { items, mode: 'hourly' }
           },
           scales: {
@@ -1158,6 +1177,38 @@ export async function mount(root, ctx) {
       state.sensorCharts.push(chart);
     });
   }
+
+  // Tableau des mesures brutes des capteurs cochés : heure exacte de chaque réception, la plus récente en tête
+  function renderRawTable() {
+    const rows = state.sensorRows || [];
+    const codes = state.capSensors || [];
+    $('capRawBox').hidden = !rows.length || !codes.length;
+    if ($('capRawBox').hidden) return;
+    $('capRawCount').textContent = `(${rows.length} mesure${rows.length > 1 ? 's' : ''})`;
+    $('capRawHead').innerHTML = `<tr><th>Reçue le</th>${codes.map(code => `<th>${escapeHtml(sensorLabel(code))}${sensorInfo(code).unite ? ` (${escapeHtml(sensorInfo(code).unite)})` : ''}</th>`).join('')}</tr>`;
+    $('capRawBody').innerHTML = [...rows].reverse().map(r => `<tr><td>${escapeHtml(exactLabel(r.mesure_le))}</td>${codes.map(code => {
+      const v = valueOf(r, code);
+      return `<td>${v === null ? '—' : escapeHtml(formatNumber(v, 2))}</td>`;
+    }).join('')}</tr>`).join('');
+  }
+
+  function exportRawCsv() {
+    const rows = state.sensorRows || [];
+    const codes = state.capSensors || [];
+    if (!rows.length || !codes.length) return;
+    const head = ['Date (heure de Paris)', 'Horodatage UTC', ...codes.map(code => `${sensorLabel(code)} [${code}]${sensorInfo(code).unite ? ` (${sensorInfo(code).unite})` : ''}`)];
+    const lines = [head, ...rows.map(r => [exactFormat.format(new Date(r.mesure_le)), new Date(r.mesure_le).toISOString(), ...codes.map(code => { const v = valueOf(r, code); return v === null ? '' : String(v).replace('.', ','); })])];
+    const csv = '\ufeff' + lines.map(l => l.map(c => /[;"\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c).join(';')).join('\r\n');
+    const station = store.list.find(s => s.id === state.capStation);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `SAM_mesures_brutes_${(station?.nom || state.capStation).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w-]+/g, '_')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  $('capRawCsv').addEventListener('click', exportRawCsv);
 
   // La station choisie dans l'encart Capteurs vaut aussi pour les noms des capteurs (case « Affiché »).
   function selectCapStation(id) {

@@ -417,3 +417,12 @@
 .tool-admin .adm-formule-tag.is-outils { background: #e5f4e4; color: #23602c; }
 .tool-admin .adm-formule-tag.is-terminee { background: #fbebeb; color: #9b1c1c; }
 .tool-admin .adm-alerte { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: #fbebeb; color: #9b1c1c; font-size: .88rem; line-height: 1.45; }
+
+/* Mesures brutes (onglet Capteurs) */
+.tool-admin .adm-raw { margin-top: 14px; border: 1px solid var(--sam-line); border-radius: 12px; padding: 10px 14px; }
+.tool-admin .adm-raw summary { cursor: pointer; font-weight: 600; }
+.tool-admin .adm-raw summary span { color: var(--sam-muted); font-weight: 400; }
+.tool-admin .adm-raw-actions { display: flex; justify-content: flex-end; margin: 10px 0 8px; }
+.tool-admin .adm-raw-wrap { max-height: 420px; overflow: auto; }
+.tool-admin .adm-raw-table th { position: sticky; top: 0; background: #fff; z-index: 1; }
+.tool-admin .adm-raw-table td, .tool-admin .adm-raw-table th { white-space: nowrap; font-variant-numeric: tabular-nums; }
