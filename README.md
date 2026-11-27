@@ -241,8 +241,8 @@ Le Kc vient des mêmes tables que le Bilan irrigation (FAO-56, édition 2025) : 
 curseur « Où en est la culture aujourd'hui ? » (repos, démarrage, croissance, pleine végétation, fin de saison).
 Pour les jours de la période, la culture avance au rythme du calendrier moyen de l'espèce (`js/fao56/saison.js`) ;
 la position réglée avance aussi d'un jour à l'autre. Hors saison : aucun apport. Pas d'ajustement au vent ni à
-l'humidité, pas d'effet du système d'irrigation ni de l'enherbement. Un Kc personnalisé (onglet Calcul) remplace
-le Kc calculé sur toute la période.
+l'humidité, pas d'effet du système d'irrigation ni de l'enherbement. Une case « Utiliser un Kc personnalisé » ouvre un
+champ dont la valeur remplace le Kc calculé sur toute la période.
 
 ## Bilan irrigation (méthode FAO-56, édition 2025)
 

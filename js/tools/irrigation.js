@@ -14,13 +14,8 @@ const TEMPLATE = `
     <p class="eyebrow">Paramètres de la parcelle</p>
     <h2>Caractéristiques de la parcelle et de l’irrigation</h2>
 
-    <div class="irr-tabs" role="tablist" aria-label="Paramètres de la parcelle">
-      <button type="button" role="tab" id="irrTab-culture" data-tab="culture" aria-controls="irrPanel-culture" aria-selected="true">Culture</button>
-      <button type="button" role="tab" id="irrTab-irrigation" data-tab="irrigation" aria-controls="irrPanel-irrigation" aria-selected="false" tabindex="-1">Irrigation</button>
-      <button type="button" role="tab" id="irrTab-calcul" data-tab="calcul" aria-controls="irrPanel-calcul" aria-selected="false" tabindex="-1">Calcul</button>
-    </div>
-
-    <div class="irr-panel" id="irrPanel-culture" role="tabpanel" aria-labelledby="irrTab-culture">
+    <h3 class="subheading">Culture</h3>
+    <div>
       <div class="form-grid">
         <label>Espèce<select id="cropSpecies"></select></label>
         <label id="cropClassLabel">Conduite / densité<select id="cropClass"></select></label>
@@ -35,13 +30,19 @@ const TEMPLATE = `
         <p id="stageHelp" class="irr-stade-aide"></p>
       </div>
       <p id="kcInfo" class="irr-kc"></p>
+      <label class="irr-coche"><input id="kcPersoOn" type="checkbox"> Utiliser un Kc personnalisé</label>
+      <div id="kcPersoBox" class="irr-kc-perso" hidden>
+        <label>Kc personnalisé<input id="kcValue" type="number" min="0" max="2" step="0.05" placeholder="ex. 0,80"></label>
+        <p id="kcOverrideInfo" class="muted"></p>
+      </div>
       <details class="info-box">
         <summary>ⓘ D’où vient le Kc ?</summary>
         <div id="kcExplain"></div>
       </details>
     </div>
 
-    <div class="irr-panel" id="irrPanel-irrigation" role="tabpanel" aria-labelledby="irrTab-irrigation" hidden>
+    <h3 class="subheading">Système d’irrigation</h3>
+    <div>
       <div class="form-grid">
         <label>Système d'irrigation
           <select id="systemType">
@@ -63,13 +64,12 @@ const TEMPLATE = `
       </div>
     </div>
 
-    <div class="irr-panel" id="irrPanel-calcul" role="tabpanel" aria-labelledby="irrTab-calcul" hidden>
+    <h3 class="subheading">Pluie et surface</h3>
+    <div>
       <div class="form-grid">
-        <label>Kc personnalisé (vide = automatique)<input id="kcValue" type="number" min="0" max="2" step="0.05" placeholder="Automatique"></label>
         <label>Part de pluie prise en compte (%)<input id="rainEfficiency" type="number" min="0" max="100" step="5"></label>
         <label>Surface de la parcelle (ha)<input id="surfaceHa" type="number" min="0.01" step="0.01"></label>
       </div>
-      <p id="kcOverrideInfo" class="muted"></p>
       <details class="info-box">
         <summary>ⓘ Comprendre la part de pluie prise en compte</summary>
         <p>Cette valeur correspond à la part de la pluie retenue dans le calcul du besoin d’irrigation, en fonction de la zone racinaire généralement alimentée par le système choisi.</p>
@@ -82,7 +82,7 @@ const TEMPLATE = `
     <p class="eyebrow">Période de programmation</p>
     <h2>Dates et fréquence d’irrigation</h2>
     <div id="irrFilters" class="irr-filters"></div>
-    <div id="periodPreview" class="period-preview"></div>
+    <div id="periodPreview" class="period-preview" hidden></div>
     <div class="form-grid">
       <label>Dernier arrosage<input id="lastIrrigation" type="date"></label>
       <label>Fréquence d'irrigation
@@ -94,10 +94,10 @@ const TEMPLATE = `
         </select>
       </label>
     </div>
-    <div class="forecast-notice">
-      <strong>Recommandation basée sur les prévisions météo</strong>
+    <details class="forecast-notice">
+      <summary>Programmation basée sur les prévisions météo</summary>
       <p>Cette programmation est une estimation calculée avec les prévisions disponibles au moment du calcul. Elles peuvent évoluer, en particulier pour la pluie. Une pluie prévue à plusieurs jours peut être décalée, plus faible ou ne pas se produire. Vérifiez régulièrement les prévisions et ajustez la programmation si nécessaire.</p>
-    </div>
+    </details>
     <div class="button-row">
       <button id="calculateButton" class="primary-button" type="button">Calculer la programmation</button>
     </div>
@@ -202,7 +202,7 @@ export async function mount(root, ctx) {
   let weatherRows = [];
   let weatherMeta = null;
 
-  ctx.filters({ location: true, period: true, hint: 'La période choisie est la période de programmation (jusqu’à 16 jours).', mountIn: q('#irrFilters') });
+  ctx.filters({ location: true, period: true, mountIn: q('#irrFilters') });
   ctx.period.configure({
     presets: [
       presets.nextDays(7),
@@ -356,11 +356,11 @@ export async function mount(root, ctx) {
     const horsSaison = zone === 'avant' || zone === 'apres';
     const kcJour = horsSaison ? 0 : C.coefDuJour(todayISO(), stadesVirtuels(cult, pos), valeursKc(cl), 0);
     q('#kcInfo').innerHTML = kcPerso !== ''
-      ? `Kc personnalisé appliqué à toute la période : <strong>${f2(kcPerso)}</strong> (onglet Calcul). Le Kc de la culture serait aujourd’hui de ${f2(kcJour)}.`
+      ? `Kc personnalisé appliqué à toute la période : <strong>${f2(kcPerso)}</strong>. Le Kc de la culture serait aujourd’hui de ${f2(kcJour)}.`
       : horsSaison ? 'Hors saison : <strong>aucun apport n’est calculé</strong>.'
         : `Kc aujourd’hui : <strong>${f2(kcJour)}</strong> · ${escapeHtml(nom.toLowerCase())}`;
     q('#kcOverrideInfo').textContent = kcPerso !== ''
-      ? `Ce Kc remplace celui de la culture (${f2(kcJour)} aujourd’hui) sur toute la période. Videz le champ pour revenir au calcul automatique.`
+      ? 'Décochez la case pour revenir au Kc de la culture.'
       : '';
     const k = cl.kc;
     q('#kcExplain').innerHTML = `<p>Valeurs de la FAO (FAO-56, révision 2025) pour <strong>${escapeHtml(cult.nom)}</strong>${cult.classes.length > 1 ? ` — ${escapeHtml(cl.nom)}` : ''} : <strong>${f2(k.ini)}</strong> au démarrage, <strong>${f2(k.mid)}</strong> en pleine végétation, <strong>${f2(k.end)}</strong> en fin de saison. Entre deux stades, le Kc change progressivement, comme dans le Bilan irrigation.</p>`
@@ -407,6 +407,8 @@ export async function mount(root, ctx) {
       q('#rainEfficiency').value = round(rainPercent, 0);
     }
     q('#kcValue').value = s.kcOverride === null ? '' : s.kcOverride;
+    q('#kcPersoOn').checked = s.kcOverride !== null;
+    q('#kcPersoBox').hidden = s.kcOverride === null;
     remplirEspeces(s);
     dessinerBande(cultureDe(s));
     q('#stagePos').value = String(Math.round(positionDuJour(s).pos));
@@ -436,11 +438,11 @@ export async function mount(root, ctx) {
   }
 
   function updatePeriodPreview() {
-    const { start, end, days } = programPeriod();
-    const place = ctx.location.get();
+    const { end } = programPeriod();
     const past = end < todayISO();
-    q('#periodPreview').innerHTML = `<strong>Période calculée :</strong> du ${formatLongDate(start)} au ${formatLongDate(end)} inclus (${days} jour${days > 1 ? 's' : ''}) · <strong>Lieu :</strong> ${place?.name || '—'}`
-      + (past ? '<br><span class="muted">Cette période est entièrement passée : le calcul sert de bilan a posteriori. Choisissez « 7 prochains jours » pour programmer les prochains apports.</span>' : '');
+    // Seul cas utile à signaler : une période déjà passée (calcul a posteriori)
+    q('#periodPreview').hidden = !past;
+    q('#periodPreview').textContent = past ? 'Cette période est entièrement passée : le calcul sert de bilan a posteriori. Choisissez « 7 prochains jours » pour programmer les prochains apports.' : '';
   }
 
   function showError(message) { q('#errorMessage').hidden = false; q('#errorMessage').textContent = message; }
@@ -680,23 +682,13 @@ export async function mount(root, ctx) {
   q('#systemType').addEventListener('change', () => updateRainRecommendation(true));
   q('#kcValue').addEventListener('input', updateKcInfo);
 
-  // Onglets Culture / Irrigation / Calcul
-  const onglets = [...root.querySelectorAll('.irr-tabs [role="tab"]')];
-  function ouvrirOnglet(nom, focus = false) {
-    onglets.forEach(b => {
-      const actif = b.dataset.tab === nom;
-      b.setAttribute('aria-selected', String(actif));
-      b.tabIndex = actif ? 0 : -1;
-      q(`#irrPanel-${b.dataset.tab}`).hidden = !actif;
-      if (actif && focus) b.focus();
-    });
-  }
-  onglets.forEach((b, i) => {
-    b.addEventListener('click', () => ouvrirOnglet(b.dataset.tab));
-    b.addEventListener('keydown', e => {
-      const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
-      if (d) { e.preventDefault(); ouvrirOnglet(onglets[(i + d + onglets.length) % onglets.length].dataset.tab, true); }
-    });
+  // Kc personnalisé : case à cocher qui ouvre le champ
+  q('#kcPersoOn').addEventListener('change', () => {
+    const on = q('#kcPersoOn').checked;
+    q('#kcPersoBox').hidden = !on;
+    if (on) q('#kcValue').focus();
+    else { q('#kcValue').value = ''; saveForm(); render(); }
+    updateKcInfo();
   });
 
   // Culture : espèce, conduite, stade

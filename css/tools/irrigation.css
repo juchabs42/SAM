@@ -200,14 +200,16 @@
   background:#fff7f9;
   color:#5f5054;
 }
-.tool-irrigation .forecast-notice strong{
-  display:block;
+.tool-irrigation .forecast-notice summary{
   color:var(--red-dark);
-  margin-bottom:5px;
   font-size:.92rem;
+  font-weight:800;
+  cursor:pointer;
 }
+.tool-irrigation .forecast-notice summary::after{content:" · en savoir plus";font-weight:600;color:#75686c;font-size:.82rem}
+.tool-irrigation .forecast-notice[open] summary::after{content:""}
 .tool-irrigation .forecast-notice p{
-  margin:0;
+  margin:8px 0 0;
   font-size:.84rem;
   line-height:1.45;
 }
@@ -243,13 +245,6 @@
   .tool-irrigation .irr-filters { margin-top: 10px; }
 }
 
-/* Onglets des paramètres de la parcelle (Culture, Irrigation, Calcul) */
-.tool-irrigation .irr-tabs{display:flex;gap:6px;margin:0 0 16px;padding:4px;border-radius:13px;background:#faf3f5;border:1px solid #f1e3e7;width:max-content;max-width:100%}
-.tool-irrigation .irr-tabs [role="tab"]{border:0;border-radius:10px;padding:9px 18px;background:none;color:#75686c;font-weight:800;cursor:pointer}
-.tool-irrigation .irr-tabs [role="tab"][aria-selected="true"]{background:#fff;color:var(--red-dark);box-shadow:0 2px 8px rgba(88,42,51,.12)}
-.tool-irrigation .irr-tabs [role="tab"]:focus-visible{outline:2px solid var(--red);outline-offset:2px}
-.tool-irrigation .irr-panel[hidden]{display:none}
-
 /* Curseur du stade de la culture */
 .tool-irrigation .irr-stade{margin-top:16px;padding:14px 15px 12px;border:1px solid #eee5e7;border-radius:14px;background:#faf7f8}
 .tool-irrigation .irr-stade-tete{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
@@ -267,7 +262,14 @@
 .tool-irrigation .irr-kc{margin:12px 0 0;padding:11px 13px;border-left:4px solid var(--red);border-radius:9px;background:var(--red-soft);color:#5f5054;font-size:.9rem}
 .tool-irrigation .irr-kc strong{color:var(--red-dark);font-size:1.05rem}
 @media(max-width:680px){
-  .tool-irrigation .irr-tabs{width:100%}
-  .tool-irrigation .irr-tabs [role="tab"]{flex:1;padding:9px 8px}
   .tool-irrigation .irr-stade-bande span{font-size:0;padding:5px 0}
 }
+
+/* Kc personnalisé (case à cocher) */
+.tool-irrigation .irr-coche{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.88rem;font-weight:700;color:#5f5054;cursor:pointer}
+.tool-irrigation .irr-coche input{width:18px;height:18px;accent-color:var(--red)}
+.tool-irrigation .irr-kc-perso{margin-top:10px;padding:12px 14px;border:1px solid var(--red-border);border-radius:12px;background:#fff}
+.tool-irrigation .irr-kc-perso label{display:grid;gap:7px;max-width:260px;font-size:.88rem;font-weight:700;color:#5f5054}
+.tool-irrigation .irr-kc-perso input{border:1px solid #d9cdd0;border-radius:11px;padding:11px;background:#fff}
+.tool-irrigation .irr-kc-perso .muted{margin:8px 0 0}
+.tool-irrigation .period-preview[hidden]{display:none}
