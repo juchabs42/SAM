@@ -30,15 +30,15 @@ const TEMPLATE = `
         <p id="stageHelp" class="irr-stade-aide"></p>
       </div>
       <p id="kcInfo" class="irr-kc"></p>
+      <details class="info-box">
+        <summary>ⓘ D’où vient le Kc ?</summary>
+        <div id="kcExplain"></div>
+      </details>
       <label class="irr-coche"><input id="kcPersoOn" type="checkbox"> Utiliser un Kc personnalisé</label>
       <div id="kcPersoBox" class="irr-kc-perso" hidden>
         <label>Kc personnalisé<input id="kcValue" type="number" min="0" max="2" step="0.05" placeholder="ex. 0,80"></label>
         <p id="kcOverrideInfo" class="muted"></p>
       </div>
-      <details class="info-box">
-        <summary>ⓘ D’où vient le Kc ?</summary>
-        <div id="kcExplain"></div>
-      </details>
     </div>
 
     <h3 class="subheading">Système d’irrigation</h3>
@@ -106,7 +106,7 @@ const TEMPLATE = `
   <p id="errorMessage" class="error" hidden></p>
 
   <section class="card result-card">
-    <p class="eyebrow">Programmation recommandée pour la période choisie</p>
+    <p class="eyebrow">Programmation calculée pour la période choisie</p>
     <p id="resultPeriod" class="result-period">—</p>
     <div class="main-result"><strong id="totalNeed">— mm</strong><span>à programmer sur la période</span></div>
     <div class="result-grid">
