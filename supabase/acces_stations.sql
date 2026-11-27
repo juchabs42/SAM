@@ -147,3 +147,15 @@ grant select on public.station_journalier to authenticated;
 revoke all on public.station_journalier from anon;
 
 notify pgrst, 'reload schema';
+
+-- Tensiomètres : graphique de l'onglet Irrigation (surface ou profondeur), réglable dans
+-- Administration > Capteurs. ts1 à ts3 en surface, ts4 à ts6 en profondeur. Exécuté le 27/11/2026.
+alter table public.station_capteurs add column if not exists graphique text;
+alter table public.station_capteurs drop constraint if exists station_capteurs_graphique_check;
+alter table public.station_capteurs add constraint station_capteurs_graphique_check check (graphique is null or graphique in ('surface', 'profondeur'));
+insert into public.station_capteurs (code, libelle, unite, ordre, categorie) values
+  ('ts3', 'Tensiomètre 3 (30 cm)', 'cb', 22, 'irrigation'),
+  ('ts6', 'Tensiomètre 6 (60 cm)', 'cb', 25, 'irrigation')
+on conflict (code) do nothing;
+update public.station_capteurs set graphique = 'surface' where code in ('ts1', 'ts2', 'ts3') and graphique is null;
+update public.station_capteurs set graphique = 'profondeur' where code in ('ts4', 'ts5', 'ts6') and graphique is null;

@@ -536,12 +536,43 @@ export async function mount(root, ctx) {
     return specs;
   }
 
+  /** Graphique d'un tensiomètre : réglage Administration > Capteurs, sinon ts1 à ts3 en surface. */
+  function tensioDepth(code) {
+    const set = sensorLabels[code]?.graphique;
+    if (set === 'surface' || set === 'profondeur') return set;
+    return Number(String(code).replace(/\D/g, '')) <= 3 ? 'surface' : 'profondeur';
+  }
+
+  /** Tensiomètres d'une profondeur : une courbe par tensiomètre et leur médiane. */
+  function tensioSpec(depth, codes, base) {
+    const spec = familySpec(`tensio-${depth}`, 'tensio', codes, base);
+    spec.title = depth === 'surface' ? 'Tensiomètres en surface' : 'Tensiomètres en profondeur';
+    if (codes.length >= 2) {
+      const median = spec.datasets[0].data.map((_, k) => {
+        const values = spec.datasets.map(ds => ds.data[k]).filter(v => v !== null && v !== undefined && Number.isFinite(v)).sort((a, b) => a - b);
+        if (!values.length) return null;
+        const mid = Math.floor(values.length / 2);
+        return round(values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2);
+      });
+      spec.datasets.push({ label: 'Médiane', data: median, color: '#111827', width: 3, dash: [7, 4] });
+      spec.hint = `${FAMILIES.tensio.hint} Trait noir pointillé : médiane des ${codes.length} tensiomètres.`;
+    }
+    return spec;
+  }
+
   function irrigationSpecs(base) {
     const codes = sensorCodes();
     const specs = [];
     ['dendro', 'tensio', 'capa'].forEach(family => {
       const list = codes.filter(FAMILIES[family].test);
-      if (list.length) specs.push(familySpec(family, family, list, base));
+      if (!list.length) return;
+      if (family === 'tensio') {
+        // Deux graphiques : surface et profondeur, chacun avec sa médiane
+        ['surface', 'profondeur'].forEach(depth => {
+          const group = list.filter(code => tensioDepth(code) === depth);
+          if (group.length) specs.push(tensioSpec(depth, group, base));
+        });
+      } else specs.push(familySpec(family, family, list, base));
     });
     const known = Object.values(FAMILIES);
     const others = codes.filter(code => !known.some(f => f.test(code)));

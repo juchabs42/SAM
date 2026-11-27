@@ -1015,6 +1015,7 @@ export async function mount(root, ctx) {
     if (error) throw error;
     state.dictionary = data || [];
     state.hasCategory = state.dictionary.some(d => 'categorie' in d);
+    state.hasGraph = state.dictionary.some(d => 'graphique' in d);
   }
   const sensorInfo = code => state.dictionary.find(d => d.code === code) || { code, libelle: code, unite: '', ordre: 999 };
   const sensorLabel = code => { const d = sensorInfo(code); return d.libelle && d.libelle !== code ? d.libelle : code; };
@@ -1274,7 +1275,7 @@ export async function mount(root, ctx) {
     rows.sort((a, b) => (a.ordre - b.ordre) || a.code.localeCompare(b.code));
     $('capDictionary').innerHTML = `
       <table class="adm-table is-dictionary">
-        <thead><tr><th title="Affiché dans l’onglet Données pour la station choisie">Affiché</th><th>Code</th><th>Libellé</th><th>Unité</th><th>Ordre</th>${state.hasCategory ? '<th title="Famille de données : règle qui peut voir ce capteur (fiche station)">Famille</th>' : ''}<th><span class="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th title="Affiché dans l’onglet Données pour la station choisie">Affiché</th><th>Code</th><th>Libellé</th><th>Unité</th><th>Ordre</th>${state.hasCategory ? '<th title="Famille de données : règle qui peut voir ce capteur (fiche station)">Famille</th>' : ''}${state.hasGraph ? '<th title="Tensiomètres : graphique de l’onglet Irrigation">Graphique</th>' : ''}<th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody>${rows.map(r => `<tr data-code="${escapeHtml(r.code)}"${masks.includes(r.code) ? ' class="is-masked"' : ''}>
           <td data-label="Affiché" class="adm-cell-show">${showCell(r.code, station)}</td>
           <td data-label="Code"><code>${escapeHtml(r.code)}</code>${r.missing ? '<span class="adm-badge is-warn">non décrit</span>' : ''}</td>
@@ -1285,6 +1286,10 @@ export async function mount(root, ctx) {
             <option value="meteo"${r.categorie === 'meteo' ? ' selected' : ''}>Météo</option>
             <option value="irrigation"${r.categorie !== 'meteo' ? ' selected' : ''}>Irrigation</option>
           </select></td>` : ''}
+          ${state.hasGraph ? `<td data-label="Graphique">${/^ts\d+$/i.test(r.code) ? `<select class="adm-input" data-f="graphique" title="Graphique des tensiomètres dans Données > Irrigation">
+            <option value="surface"${(r.graphique || (Number(r.code.slice(2)) <= 3 ? 'surface' : 'profondeur')) === 'surface' ? ' selected' : ''}>Surface</option>
+            <option value="profondeur"${(r.graphique || (Number(r.code.slice(2)) <= 3 ? 'surface' : 'profondeur')) === 'profondeur' ? ' selected' : ''}>Profondeur</option>
+          </select>` : '<span class="adm-muted">—</span>'}</td>` : ''}
           <td class="adm-cell-actions"><button type="button" class="adm-button is-small" data-save>Enregistrer</button></td>
         </tr>`).join('')}</tbody>
       </table>`;
@@ -1301,6 +1306,7 @@ export async function mount(root, ctx) {
     button.disabled = true;
     const row = { code: tr.dataset.code, libelle, unite: field('unite') || null, ordre: Number.isFinite(ordre) ? ordre : 100 };
     if (state.hasCategory) row.categorie = field('categorie');
+    if (state.hasGraph && tr.querySelector('[data-f="graphique"]')) row.graphique = field('graphique');
     const { error } = await supabase.from('station_capteurs').upsert(row, { onConflict: 'code' });
     button.disabled = false;
     if (error) { ctx.ui.toast(`Enregistrement impossible : ${error.message}`, 6000); return; }
